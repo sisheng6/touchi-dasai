@@ -1,0 +1,1488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>偷吃大赛 · 教室试验版</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1a1612; overflow: hidden; font-family: -apple-system, "PingFang SC", sans-serif; }
+    canvas { display: block; }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #f3e6d0; background: #1a1612; font-size: 15px; letter-spacing: .05em; transition: opacity .6s; }
+    #hint { position: fixed; left: 16px; top: 14px; color: #f3e6d0; font-size: 12px; background: rgba(20,16,12,.55); padding: 6px 10px; border-radius: 6px; pointer-events: none; }
+
+    /* 食物选择栏：底部居中的快捷栏，1–8 / 滚轮 / 点击切换 */
+    :root { --s: min(68px, calc((100vw - 100px) / 8)); --gold: #ffc94d; --paper: #f6ecd9; --ink: #3a2a1c; }
+    #hotbar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px;
+      padding: 10px 12px 12px; background: rgba(28,21,15,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,236,205,.18); border-radius: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.35); user-select: none; }
+    .slot { position: relative; width: var(--s); height: var(--s); padding: 0; border: 2px solid rgba(255,255,255,.0); border-radius: 12px;
+      background: linear-gradient(#f8efde, #e8d6b7); cursor: pointer; display: grid; place-items: center;
+      box-shadow: inset 0 -3px 0 rgba(120,85,50,.25); transition: transform .16s cubic-bezier(.3,1.6,.5,1), box-shadow .16s, border-color .16s; }
+    .slot:hover { transform: translateY(-3px); }
+    .slot img { width: 86%; height: 86%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(60,35,15,.3)); pointer-events: none; }
+    .slot .cnt { position: absolute; right: 5px; bottom: 3px; z-index: 3; font: 800 12px/1 -apple-system, sans-serif; color: #7a5532; }
+    .slot.empty { cursor: not-allowed; }
+    .slot.empty img { filter: grayscale(1); opacity: .3; }
+    .slot.empty::after { content: "空"; position: absolute; inset: 0; display: grid; place-items: center; font: 800 calc(var(--s) * .3)/1 -apple-system, "PingFang SC", sans-serif; color: #7a5532; }
+    .slot .key { position: absolute; left: 6px; top: 4px; font: 700 11px/1 -apple-system, sans-serif; color: #9a7650; }
+    .slot.active { transform: translateY(-9px) scale(1.07); border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(255,201,77,.35), 0 8px 16px rgba(0,0,0,.35), inset 0 -3px 0 rgba(120,85,50,.25); }
+    .slot.active .key { color: #c2861b; }
+    #foodinfo { position: fixed; left: 50%; bottom: calc(var(--s) + 46px); transform: translateX(-50%); display: flex; align-items: baseline; gap: 12px;
+      flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); box-sizing: border-box;
+      background: var(--paper); color: var(--ink); padding: 10px 18px; border-radius: 12px; font-size: 14px; white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(0,0,0,.3); pointer-events: none; }
+    #foodinfo b { font-size: 20px; }
+    #foodinfo span { color: #4f3620; letter-spacing: .02em; font-weight: 700; }
+    #foodinfo i { font-style: normal; color: #d9c7a8; }
+    #foodinfo em { font-style: normal; color: #6b4f33; }
+    #foodinfo.pop { animation: pop .28s cubic-bezier(.3,1.6,.5,1); }
+    @keyframes pop { from { transform: translateX(-50%) translateY(6px) scale(.94); opacity: .3; } }
+    #foodinfo:empty { display: none; }
+    body.overview #hotbar, body.overview #foodinfo { display: none; }
+
+    /* ---------- 游戏 HUD ---------- */
+    .panel { background: rgba(28,21,15,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,236,205,.18); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); color: #f3e6d0; }
+    #hud { position: fixed; left: 16px; top: 14px; padding: 12px 14px; width: min(340px, calc(100vw - 150px)); box-sizing: border-box; font-size: 13px; pointer-events: none; background: rgba(28,21,15,.84); }
+    #hearts { font-size: 18px; letter-spacing: 2px; margin-bottom: 6px; }
+    #hearts i { font-style: normal; opacity: .25; filter: grayscale(1); }
+    .bar { display: grid; grid-template-columns: 30px 1fr 28px; align-items: center; gap: 8px; margin-top: 5px; }
+    .bar label { color: #d9c4a3; }
+    .track { height: 10px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
+    .track div { height: 100%; width: 0; border-radius: 6px; transition: width .15s; }
+    #fullFill { background: linear-gradient(90deg, #f0b94a, #ffd86b); }
+    #noiseFill { background: linear-gradient(90deg, #7fb069, #f0b94a 55%, #e0503f); }
+    #fullNum { text-align: right; font-weight: 700; color: #ffd86b; }
+    .comboHead { margin: 10px 0 6px; padding-top: 10px; border-top: 1px solid rgba(255,236,205,.2); color: #fff3dc; font-size: 16px; font-weight: 800; }
+    .comboHead small { font-size: 12px; font-weight: 500; color: #e6d3b3; margin-left: 6px; }
+    .combo { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding: 3px 6px; border-radius: 9px; border: 1.5px solid transparent; transition: opacity .2s, background .2s, border-color .2s; }
+    .combo b { flex: 1; font-size: 15px; font-weight: 800; color: #fff3dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .combo img { width: 40px; height: 40px; border-radius: 9px; background: rgba(255,248,234,.9); object-fit: contain; opacity: .8; filter: saturate(.75); transition: opacity .2s, filter .2s, transform .2s; }
+    .combo img.got { opacity: 1; filter: none; background: #ffe7a3; box-shadow: 0 0 0 2px #ffd86b; }
+    .combo .ci.got::after { content: "✓"; position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 50%; background: #3f9d4a; color: #fff; font: 900 11px/16px -apple-system, sans-serif; text-align: center; }
+    .combo img.lost { opacity: .5; box-shadow: inset 0 0 0 2px #e0503f; }
+    .combo .ci { position: relative; display: inline-flex; }
+    .combo .ci.ban::after { content: ""; position: absolute; inset: 0; border-radius: 8px;
+      background: conic-gradient(rgba(25,15,10,.78) calc(var(--cd, 1) * 360deg), rgba(25,15,10,0) 0); }
+    .combo img.now:not(.got) { opacity: .9; filter: none; box-shadow: 0 0 0 2px #ffd86b; transform: scale(1.06); }
+    .combo em { font-style: normal; color: #ffd86b; width: 44px; text-align: right; font-size: 15px; font-weight: 800; }
+    .combo.cur { background: rgba(255,216,107,.16); border-color: rgba(255,216,107,.55); }
+    .combo.done b { color: #ffd86b; }
+    .combo.done em::after { content: " ✓"; }
+    .combo.failed { opacity: .4; }
+    .combo.failed b { text-decoration: line-through; }
+    #timerBox { position: fixed; right: 16px; top: 14px; padding: 8px 14px; text-align: right; pointer-events: none; }
+    #timer { font: 700 24px/1 "SF Mono", ui-monospace, monospace; color: #ffe7b3; }
+    #timerBox small { display: block; font-size: 11px; color: #d9c4a3; margin-bottom: 4px; }
+    #snoreChip { margin-top: 4px; font-size: 18px; text-align: center; display: none; }
+    #teacherChip { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); padding: 7px 16px; font-size: 14px; font-weight: 700; pointer-events: none; transition: background .2s; white-space: nowrap; }
+    #teacherChip.safe { background: rgba(58,110,60,.82); }
+    #teacherChip.warn { background: rgba(196,140,30,.9); animation: shake .25s infinite; }
+    #teacherChip.danger { background: rgba(190,50,40,.9); }
+    @keyframes shake { 50% { transform: translateX(-50%) rotate(-2deg); } }
+    .bubble { position: fixed; transform: translate(-50%, -100%); background: #fffaf0; color: #3a2a1c; padding: 6px 12px; border-radius: 12px;
+      font-size: 14px; font-weight: 700; white-space: nowrap; pointer-events: none; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+    .bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: #fffaf0; }
+    #zzz { background: #e8f3ff; color: #2f5d8a; }
+    #zzz::after { border-top-color: #e8f3ff; }
+    #ring { position: fixed; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px; pointer-events: none; display: none; }
+    #ring circle { fill: none; stroke-width: 9; }
+    #ring .bg { stroke: rgba(255,255,255,.25); }
+    #ring .fg { stroke: #ffd86b; stroke-linecap: round; stroke-dasharray: 264; transform: rotate(-90deg); transform-origin: 50% 50%; }
+    #ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px #000; }
+    .float { position: fixed; left: 50%; top: 42%; transform: translate(-50%, 0); font-size: 22px; font-weight: 800; color: #ffd86b;
+      text-shadow: 0 2px 6px rgba(0,0,0,.6); pointer-events: none; animation: floatUp 1.1s ease-out forwards; white-space: nowrap; }
+    @keyframes floatUp { to { transform: translate(-50%, -70px); opacity: 0; } }
+    #toast { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%) scale(.9); font-size: 30px; font-weight: 900; color: #fff;
+      text-shadow: 0 3px 10px rgba(0,0,0,.6); pointer-events: none; opacity: 0; transition: opacity .2s, transform .2s; white-space: nowrap; }
+    #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    #vignette { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 160px 40px rgba(200,30,20,0); transition: box-shadow .5s; }
+    #vignette.flash { box-shadow: inset 0 0 160px 40px rgba(200,30,20,.75); transition: none; }
+    /* 吃东西时的边框：越吵越红、越亮，一直在呼吸闪 */
+    #vignette.eating { box-shadow: inset 0 0 0 7px rgba(var(--vc, 255,190,60), .85), inset 0 0 150px 55px rgba(var(--vc, 255,190,60), var(--va, .45));
+      transition: none; animation: eatPulse .7s ease-in-out infinite; }
+    @keyframes eatPulse { 50% { opacity: .55; } }
+    #eatBtn { position: fixed; right: 18px; bottom: 18px; width: 128px; height: 128px; border-radius: 50%; border: 4px solid #ffd86b;
+      background: radial-gradient(circle at 40% 35%, #ffe08a, #f0a43c); color: #5a3210; font: 900 20px/1.2 -apple-system, "PingFang SC", sans-serif;
+      box-shadow: 0 8px 20px rgba(0,0,0,.4), inset 0 -4px 0 rgba(150,80,20,.35); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+    #eatBtn small { display: block; padding: 4px 14px; border-radius: 8px; background: #fff8e6; color: #5a3210; font: 900 16px/1 -apple-system, "PingFang SC", sans-serif;
+      box-shadow: 0 3px 0 #c98a3a; letter-spacing: .1em; }
+    #eatBtn.down { transform: scale(.94); background: radial-gradient(circle at 40% 35%, #ffd86b, #e89a35); }
+    .slot.banned { cursor: not-allowed; }
+    .slot.banned img { filter: grayscale(.7); }
+    .slot.locked { cursor: not-allowed; }
+    .slot.locked img { filter: grayscale(1) brightness(.55); opacity: .5; }
+    .slot.locked::before { content: "🔒"; position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--s) * .38); z-index: 1; }
+    .slot.unlock { animation: unlockPop .9s cubic-bezier(.3,1.6,.5,1); }
+    @keyframes unlockPop { 0% { transform: scale(.6); box-shadow: 0 0 0 0 rgba(255,216,107,.9); } 50% { transform: scale(1.25); box-shadow: 0 0 0 10px rgba(255,216,107,.4); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,216,107,0); } }
+    .combo b small { display: block; font-size: 12px; font-weight: 700; color: #a9dcff; margin-top: 1px; }
+    .combo.done b small { color: #ffd86b; }
+    .combo.far { opacity: .8; }
+    .combo img.locked { filter: grayscale(.6) brightness(.75); opacity: .7; }
+    /* 没收 = 技能冷却：暗色扇形顺时针退掉，慢慢变亮，转完自动恢复 */
+    .slot.banned::after { content: ""; position: absolute; inset: 0; border-radius: 10px; z-index: 2; pointer-events: none;
+      background: conic-gradient(rgba(25,15,10,.78) calc(var(--cd, 1) * 360deg), rgba(25,15,10,0) 0); }
+    body.menu #hud, body.menu #timerBox, body.menu #teacherChip, body.menu #eatBtn, body.menu #ring,
+    body.overview #eatBtn, body.overview #ring { display: none; }
+    @media (max-width: 720px) { .combo img { width: 30px; height: 30px; } .combo b { font-size: 12px; } #eatBtn { bottom: calc(var(--s) + 70px); width: 96px; height: 96px; font-size: 15px; } #eatBtn small { font-size: 12px; padding: 3px 10px; } #teacherChip { top: auto; bottom: calc(var(--s) + 92px); font-size: 12px; } }
+
+    /* 开始 / 结算 */
+    #overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20,15,10,.55); backdrop-filter: blur(3px); padding: 16px; box-sizing: border-box; }
+    #overlay[hidden] { display: none; }
+    .card { background: #f7efdf; color: #3a2a1c; border-radius: 18px; padding: 26px 28px; width: min(440px, 100%); box-sizing: border-box;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5); max-height: calc(100vh - 32px); overflow: auto; }
+    .card h1 { margin: 0 0 4px; font-size: 34px; letter-spacing: .05em; }
+    .card .sub { margin: 0 0 14px; color: #8a6b48; }
+    .card ul { margin: 0 0 12px; padding-left: 20px; line-height: 1.75; font-size: 14px; }
+    .card b { color: #b5562a; }
+    .card .keys { font-size: 12px; color: #8a6b48; margin: 0 0 16px; }
+    .card button { width: 100%; padding: 13px; border: 0; border-radius: 12px; background: #d9822b; color: #fff; font: 800 17px -apple-system, "PingFang SC", sans-serif; cursor: pointer; box-shadow: 0 4px 0 #a35f1c; }
+    /* 开始页 / 暂停：次要按钮 */
+    .card button.ghost { margin-top: 10px; background: transparent; color: #8a5a2b; box-shadow: inset 0 0 0 2px #e2cba6; font-size: 15px; padding: 11px; }
+    .card button.ghost:active { transform: translateY(1px); box-shadow: inset 0 0 0 2px #d4b384; }
+    #pauseCard h1, #startCard h1 { text-align: center; }
+    #startCard .sub { text-align: center; margin-bottom: 18px; }
+    #rulesCard .tabs { margin-top: 0; }
+    #rulesBack { margin-top: 4px; }
+    .trow { display: flex; align-items: center; gap: 10px; }
+    #pauseBtn { pointer-events: auto; width: 30px; height: 30px; border: 0; border-radius: 8px; background: rgba(255,236,205,.18); color: #ffe7b3; font-size: 14px; cursor: pointer; }
+    #pauseBtn:hover { background: rgba(255,236,205,.3); }
+    /* 新手提示气泡：指向相关的界面 */
+    #tip { position: fixed; z-index: 30; max-width: 280px; padding: 10px 14px; border-radius: 12px; background: #fff6df; color: #3a2a1c;
+      font: 700 15px/1.45 -apple-system, "PingFang SC", sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 3px #ffc94d;
+      pointer-events: none; opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
+    #tip.show { opacity: 1; transform: none; animation: tipBob 1.2s ease-in-out .3s infinite; }
+    @keyframes tipBob { 50% { transform: translateY(-3px); } }
+    #tip b { color: #c2561b; }
+    #tip::after { content: ""; position: absolute; width: 14px; height: 14px; background: #fff6df; transform: rotate(45deg); box-shadow: 3px 3px 0 0 #ffc94d; }
+    #tip.down::after { left: var(--ax, 50%); bottom: -7px; margin-left: -7px; }
+    #tip.up::after { left: var(--ax, 50%); top: -7px; margin-left: -7px; box-shadow: -3px -3px 0 0 #ffc94d; }
+    #tip.left::after { top: var(--ay, 50%); left: -7px; margin-top: -7px; box-shadow: -3px 3px 0 0 #ffc94d; }
+    body.menu #tip { display: none; }
+    #tip { font-size: 17px; max-width: 320px; }
+    #tip kbd { font-size: 16px; padding: 4px 12px; margin: 0 2px; box-shadow: 0 3px 0 #d9c7a8; }
+    .tabs { display: flex; gap: 6px; margin: 2px 0 12px; background: #eadcc2; padding: 4px; border-radius: 12px; }
+    .card .tabs .tab { flex: 1; width: auto; padding: 8px; border-radius: 9px; background: transparent; color: #8a6b48; box-shadow: none; font-size: 15px; }
+    .card .tabs .tab.on { background: #fff8ea; color: #3a2a1c; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .card ol { margin: 0 0 10px; padding-left: 22px; line-height: 1.65; font-size: 14px; }
+    .card ol li { margin-bottom: 4px; }
+    .card ol li b { color: #3a2a1c; margin-right: 4px; }
+    .card .goal { margin: 10px 0 16px; padding: 10px 12px; border-radius: 12px; background: #fde7c6; color: #8a4513; font-weight: 800; font-size: 16px; text-align: center; }
+    .keytable { width: 100%; border-collapse: collapse; font-size: 14px; margin: 4px 0 16px; }
+    .keytable td { padding: 9px 4px; border-bottom: 1px solid #eadcc2; vertical-align: middle; }
+    .keytable td:first-child { white-space: nowrap; padding-right: 12px; }
+    kbd { display: inline-block; min-width: 18px; padding: 2px 6px; border-radius: 6px; background: #fff; border: 1px solid #d9c7a8; box-shadow: 0 2px 0 #d9c7a8; font: 700 12px -apple-system, sans-serif; text-align: center; }
+    .card button:active { transform: translateY(2px); box-shadow: 0 2px 0 #a35f1c; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 20px; }
+    .stats div { background: rgba(120,85,50,.08); border-radius: 12px; padding: 10px 4px; text-align: center; }
+    .stats b { display: block; font-size: 20px; font-weight: 800; white-space: nowrap; }
+    .stats small { display: block; margin-top: 2px; font-size: 12px; color: #8a6b48; }
+    .card .sub:empty { display: none; }
+    #endCard h1 { text-align: center; }
+    .badge { display: inline-block; margin-top: 6px; padding: 5px 12px; border-radius: 999px; background: #3a2a1c; color: #ffd86b; font-weight: 800; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body class="menu">
+  <div id="loading">正在搬桌子… <span id="progress">0%</span></div>
+  <div id="vignette"></div>
+  <div id="hud" class="panel">
+    <div id="hearts"></div>
+    <div class="bar"><label>饱腹</label><div class="track"><div id="fullFill"></div></div><span id="fullNum">0</span></div>
+    <div class="bar"><label>动静</label><div class="track"><div id="noiseFill"></div></div><span></span></div>
+    <div id="combos"></div>
+  </div>
+  <div id="timerBox" class="panel"><div class="trow"><div id="timer">03:00</div><button id="pauseBtn" title="暂停（Esc / P）">⏸</button></div><div id="snoreChip">💤</div></div>
+  <div id="tip"><span></span></div>
+  <div id="teacherChip" class="panel"></div>
+  <div id="bubble" class="bubble"></div>
+  <div id="zzz" class="bubble">Zzz…</div>
+  <div id="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="42"/><circle id="ringFg" class="fg" cx="50" cy="50" r="42"/></svg><span id="ringTxt"></span></div>
+  <div id="toast"></div>
+  <button id="eatBtn">按住偷吃<small>空格</small></button>
+  <div id="foodinfo"></div>
+  <div id="hotbar"></div>
+  <div id="overlay">
+    <div class="card" id="startCard">
+      <h1>偷吃大赛</h1>
+      <p class="sub">饿了一下午。趁老师不注意，下课前把饱腹吃到 <span id="goalTxt">100</span>！</p>
+      <button id="startBtn">开始上课</button>
+      <button class="ghost" id="rulesBtn">📖 规则和操作</button>
+    </div>
+    <div class="card" id="rulesCard" hidden>
+      <div class="tabs"><button class="tab on" data-page="rules">规则</button><button class="tab" data-page="keys">操作</button></div>
+      <div class="page" id="page-rules">
+        <ol>
+          <li><b>老师背对你时，偷偷吃。</b>老师在写黑板、或侧身走来走去时，最安全。</li>
+          <li><b>听到"咳咳"，马上停。</b>老师一咳嗽，就是要转过来看了。</li>
+          <li><b>别吃得太响。</b>屏幕四周的光圈越红，说明声音越大；太响了老师会回头找人。</li>
+          <li><b>被抓到扣一颗心。</b>手里的零食会被没收，要等一会儿才能再吃。3 颗心都没了，游戏结束。</li>
+          <li><b>同桌打呼噜时，可以放心吃。</b></li>
+          <li><b>零食要一步步解锁。</b>一开始只有小零食。把左上角一个组合里的零食都吃一遍，就能解锁更顶饱的零食。</li>
+          <li><b>每样零食数量有限，吃完就没了。</b></li>
+        </ol>
+        <p class="goal">🎯 3 分钟内，把饱腹吃到 100 就赢了！</p>
+      </div>
+      <div class="page" id="page-keys" hidden>
+        <table class="keytable">
+          <tr><td><kbd>空格</kbd> 或右下角按钮</td><td>按住吃，松开藏起来</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd> / <kbd>1</kbd>–<kbd>8</kbd> / 鼠标滚轮</td><td>换零食</td></tr>
+          <tr><td>点底部的零食格子</td><td>换零食；鼠标移上去能看到名字</td></tr>
+          <tr><td>按住鼠标拖动</td><td>左右看看</td></tr>
+        </table>
+      </div>
+      <button id="rulesBack">返回</button>
+    </div>
+    <div class="card" id="pauseCard" hidden>
+      <h1>暂停</h1>
+      <button id="resumeBtn">继续上课</button>
+      <button class="ghost" id="pauseRulesBtn">📖 规则和操作</button>
+      <button class="ghost" id="tipsBtn">新手提示：开</button>
+      <button class="ghost" id="restartBtn">重新开始</button>
+    </div>
+    <div class="card" id="endCard" hidden>
+      <h1 id="endTitle"></h1>
+      <p class="sub" id="endSub"></p>
+      <div class="stats" id="endStats"></div>
+      <button id="againBtn">再来一节</button>
+    </div>
+  </div>
+  <script src="assets.js"></script>
+  <script type="module">
+// 偷吃大赛 · 教室试验版（spike）：房间壳子用代码写，物件加载 Meshy N1 模型。
+// 坐标：单位米，y 朝上，黑板在 -Z 墙，窗户在 -X 墙，门在 +X 墙，学生面朝 -Z。
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+// 打包版（dist/）把模型、图片、音效都内嵌在 assets.js 里：asset() 把原路径换成内嵌数据；开发时原样返回
+const asset = (u) => (window.__asset ? window.__asset(u) : u);
+THREE.DefaultLoadingManager.setURLModifier(asset);
+
+const MODEL_DIR = '../ref/3d_models_n1';
+const W = 9, D = 9, H = 3.1;            // 房间宽（x）、深（z）、高
+const HW = W / 2, HD = D / 2;
+
+// ---------- 渲染器 / 相机 ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1612);
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.03, 60);
+camera.rotation.order = 'YXZ';
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+// 第一人称"手里拿着的食物"单独一个场景，清掉深度后画在最上层，不会插进课桌里
+const handScene = new THREE.Scene();
+handScene.add(new THREE.HemisphereLight(0xfff1dd, 0x6a4a30, 1.6));
+const handLight = new THREE.DirectionalLight(0xffe2b5, 1.6);
+handLight.position.set(.5, 2, 1); handScene.add(handLight);
+const handPass = new RenderPass(handScene, camera);
+handPass.clear = false; handPass.clearDepth = true;
+composer.addPass(handPass);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.6, 0.92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------- 小工具 ----------
+const rand = mulberry32(7);
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const jitter = (s) => (rand() - 0.5) * 2 * s;
+
+function canvasTex(w, h, draw, repeat = [1, 1]) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(...repeat);
+  return t;
+}
+function noise(ctx, w, h, n, alpha, light = true) {
+  for (let i = 0; i < n; i++) {
+    const v = light ? 255 : 0;
+    ctx.fillStyle = `rgba(${v},${v},${v},${rand() * alpha})`;
+    ctx.fillRect(rand() * w, rand() * h, 1 + rand() * 3, 1 + rand() * 3);
+  }
+}
+function box(w, h, d, mat, x, y, z, { cast = false, receive = true } = {}) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z); m.castShadow = cast; m.receiveShadow = receive;
+  scene.add(m); return m;
+}
+const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, ...o });
+
+// ---------- 贴图（全部用 canvas 画，手绘感） ----------
+const floorTex = canvasTex(1024, 1024, (g, w, h) => {
+  const plank = 64;                                   // 每块木板宽（像素），整张 = 2m
+  for (let x = 0; x < w; x += plank) {
+    for (let y = -rand() * 400; y < h; y += 380 + rand() * 260) {
+      const l = 38 + rand() * 10, hue = 22 + rand() * 6;
+      g.fillStyle = `hsl(${hue},55%,${l}%)`; g.fillRect(x, y, plank, 700);
+      g.strokeStyle = 'rgba(50,25,10,.55)'; g.lineWidth = 2; g.strokeRect(x + 1, y, plank - 2, 700);
+    }
+    for (let i = 0; i < 14; i++) {                    // 木纹
+      g.strokeStyle = `rgba(70,35,15,${0.08 + rand() * .12})`; g.lineWidth = 1;
+      g.beginPath(); const gx = x + 4 + rand() * (plank - 8); g.moveTo(gx, 0);
+      g.bezierCurveTo(gx + jitter(6), h * .3, gx + jitter(6), h * .6, gx + jitter(4), h); g.stroke();
+    }
+  }
+  noise(g, w, h, 5000, .06);
+}, [W / 2, D / 2]);
+
+const wallTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#e6d6bd'; g.fillRect(0, 0, w, h); noise(g, w, h, 6000, .05, false); noise(g, w, h, 3000, .05);
+}, [3, 1]);
+
+const wainscotTex = canvasTex(1024, 256, (g, w, h) => {
+  const p = 48;
+  for (let x = 0; x < w; x += p) {
+    g.fillStyle = `hsl(${24 + rand() * 4},52%,${40 + rand() * 6}%)`; g.fillRect(x, 0, p, h);
+    g.fillStyle = 'rgba(40,20,8,.5)'; g.fillRect(x, 0, 2, h);
+    g.fillStyle = 'rgba(255,220,180,.12)'; g.fillRect(x + 2, 0, 2, h);
+  }
+  noise(g, w, h, 3000, .08, false);
+}, [4, 1]);
+
+const ceilTex = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#8f8f93'; g.fillRect(0, 0, w, h);
+  noise(g, w, h, 9000, .08, false);
+  g.strokeStyle = '#5c5c62'; g.lineWidth = 6; g.strokeRect(0, 0, w, h);
+}, [W / 0.9, D / 0.9]);
+
+const boardTex = canvasTex(2048, 640, (g, w, h) => {
+  g.fillStyle = '#2d4a3b'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 40; i++) {                      // 擦过的粉笔痕
+    g.fillStyle = `rgba(230,240,230,${rand() * .05})`;
+    g.beginPath(); g.ellipse(rand() * w, rand() * h, 80 + rand() * 200, 20 + rand() * 60, rand(), 0, 7); g.fill();
+  }
+  noise(g, w, h, 8000, .06);
+  g.fillStyle = 'rgba(245,245,235,.88)'; g.strokeStyle = 'rgba(245,245,235,.8)';
+  g.shadowColor = 'rgba(255,255,255,.5)'; g.shadowBlur = 4;
+  g.font = '64px "Chalkboard SE", "Comic Sans MS", cursive';
+  g.fillText("TODAY'S LESSON", 120, 130); g.lineWidth = 4;
+  g.beginPath(); g.moveTo(115, 150); g.lineTo(640, 145); g.stroke();
+  g.font = '58px "Chalkboard SE", "Comic Sans MS", cursive';
+  g.fillText('24 + 18 = 42', 210, 270); g.fillText('6 × 8 = 48', 240, 360);
+  g.beginPath(); g.moveTo(840, 220); g.lineTo(840, 400); g.lineTo(1100, 400); g.closePath(); g.stroke();
+  g.fillText('8', 790, 320); g.fillText('6', 950, 470); g.fillText('10', 980, 290);
+  g.beginPath(); g.moveTo(1280, 120); g.lineTo(1285, 500); g.stroke();
+  g.fillText('HOMEWORK', 1340, 160);
+  g.font = '46px "Chalkboard SE", "Comic Sans MS", cursive';
+  g.fillText('• Read pages 3–4', 1340, 260); g.fillText('• Practice: No. 5', 1340, 340);
+});
+
+const corkTex = canvasTex(512, 384, (g, w, h) => {
+  g.fillStyle = '#b07a48'; g.fillRect(0, 0, w, h); noise(g, w, h, 9000, .18, false); noise(g, w, h, 4000, .12);
+  const papers = [['#f2c7c2', 30, 30, 150, 180, -2], ['#f5e3a8', 210, 25, 140, 170, 3], ['#cfe3f2', 40, 230, 160, 120, 1],
+                  ['#e3eccd', 230, 215, 120, 140, -4], ['#f7f1e6', 370, 40, 120, 150, 2], ['#f6d9b5', 380, 220, 110, 130, -3]];
+  for (const [c, x, y, pw, ph, r] of papers) {
+    g.save(); g.translate(x + pw / 2, y + ph / 2); g.rotate(r * Math.PI / 180);
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(-pw / 2 + 4, -ph / 2 + 5, pw, ph);
+    g.fillStyle = c; g.fillRect(-pw / 2, -ph / 2, pw, ph);
+    g.fillStyle = 'rgba(80,60,60,.45)';
+    for (let i = 0; i < 6; i++) g.fillRect(-pw / 2 + 14, -ph / 2 + 22 + i * 20, (pw - 28) * (0.5 + rand() * .5), 5);
+    g.fillStyle = ['#d94b4b', '#4b7bd9', '#e8b739'][Math.floor(rand() * 3)];
+    g.beginPath(); g.arc(0, -ph / 2 + 8, 6, 0, 7); g.fill();
+    g.restore();
+  }
+});
+
+// 旧的程序化天空（已被窗外校园图替代）：不再显示，但保留生成过程——它会消耗 rand()，删掉会改变后面桌椅的随机摆位和防穿模偏移
+const skyTex = canvasTex(2048, 1024, (g, w, h) => {
+  const grd = g.createLinearGradient(0, 0, 0, h);
+  grd.addColorStop(0, '#4f5868'); grd.addColorStop(.45, '#7d8290'); grd.addColorStop(.7, '#c9a58c'); grd.addColorStop(1, '#e0b48a');
+  g.fillStyle = grd; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 70; i++) {                      // 阴云
+    const y = rand() * h * .55, r = 60 + rand() * 160;
+    g.fillStyle = `rgba(${90 + rand() * 40},${95 + rand() * 40},${110 + rand() * 40},${.25 + rand() * .3})`;
+    g.beginPath(); g.ellipse(rand() * w, y, r * 2, r * .6, 0, 0, 7); g.fill();
+  }
+  for (let i = 0; i < 260; i++) {                     // 树冠
+    const x = rand() * w, y = h * .5 + rand() * h * .5, r = 40 + rand() * 90;
+    g.fillStyle = `hsl(${100 + rand() * 30},${30 + rand() * 20}%,${18 + rand() * 18}%)`;
+    g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+});
+
+// ---------- 房间壳子 ----------
+const wallMat = std({ map: wallTex });
+const woodMat = std({ map: wainscotTex });
+const trimMat = std({ color: 0x7a4a26 });
+const frameMat = std({ color: 0x4d4b48, roughness: .6, metalness: .3 });
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), std({ map: floorTex, roughness: .75 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), std({ map: ceilTex, emissive: 0xffffff, emissiveMap: ceilTex, emissiveIntensity: .35 }));
+ceil.rotation.x = Math.PI / 2; ceil.position.y = H; scene.add(ceil);
+
+// 前墙（黑板）、后墙、右墙（门）
+box(W, H, .2, wallMat, 0, H / 2, -HD - .1);
+box(W, H, .2, wallMat, 0, H / 2, HD + .1);
+box(.2, H, D, wallMat, HW + .1, H / 2, 0);
+// 左墙：中间开窗
+const winZ = 3.9, sill = .95, winTop = 2.75;
+box(.2, sill, D, wallMat, -HW - .1, sill / 2, 0);
+box(.2, H - winTop, D, wallMat, -HW - .1, (H + winTop) / 2, 0);
+box(.2, winTop - sill, HD - winZ, wallMat, -HW - .1, (sill + winTop) / 2, -(HD + winZ) / 2);
+box(.2, winTop - sill, HD - winZ, wallMat, -HW - .1, (sill + winTop) / 2, (HD + winZ) / 2);
+
+// 护墙板（墙下 0.9m 木板）+ 压条
+const wsH = .9;
+box(W, wsH, .03, woodMat, 0, wsH / 2, -HD + .015);
+box(W, wsH, .03, woodMat, 0, wsH / 2, HD - .015);
+box(.03, wsH, D, woodMat, HW - .015, wsH / 2, 0);
+box(.03, wsH, D, woodMat, -HW + .015, wsH / 2, 0);
+box(W, .05, .06, trimMat, 0, wsH, -HD + .03); box(W, .05, .06, trimMat, 0, wsH, HD - .03);
+box(.06, .05, D, trimMat, HW - .03, wsH, 0);
+
+// 窗户：窗台、窗框、玻璃、窗外天空
+box(.3, .05, winZ * 2 + .1, trimMat, -HW + .1, sill + .025, 0, { cast: true });
+const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfd2e0, transparent: true, opacity: .1, roughness: .1, metalness: 0 });
+for (let z = -winZ; z <= winZ + .01; z += winZ / 2) box(.1, winTop - sill, .08, frameMat, -HW, (sill + winTop) / 2, z, { cast: true });
+for (let z = -winZ + winZ / 4; z < winZ; z += winZ / 2) box(.06, winTop - sill, .04, frameMat, -HW + .03, (sill + winTop) / 2, z);
+for (const y of [sill + .03, 2.3, winTop - .03]) box(.1, .06, winZ * 2, frameMat, -HW, y, 0);
+const glass = new THREE.Mesh(new THREE.PlaneGeometry(winZ * 2, winTop - sill), glassMat);
+glass.rotation.y = Math.PI / 2; glass.position.set(-HW, (sill + winTop) / 2, 0); scene.add(glass);
+// 窗外：Codex 画的校园外景（ref/image/campus_view.png，3:2）。从座位看出去，窗户只露出画面中段一条
+// （草地、旗杆、对面教学楼、树），宽 26m 放在 12m 外，画面 35% 高度对齐窗台视线
+const campusTex = new THREE.TextureLoader().load(asset('../ref/image/campus_view.png'));
+campusTex.colorSpace = THREE.SRGBColorSpace; campusTex.anisotropy = 4;
+const sky = new THREE.Mesh(new THREE.PlaneGeometry(26, 26 / 1.5), new THREE.MeshBasicMaterial({ map: campusTex, toneMapped: false, color: 0xe6ded6 }));
+sky.rotation.y = Math.PI / 2; sky.position.set(-12, 3.25, 0); scene.add(sky);
+
+// 讲台台阶
+const platH = .18, platD = 1.3;
+box(6.4, platH, platD, std({ color: 0x8a5530, map: floorTex }), 0, platH / 2, -HD + platD / 2, { receive: true });
+box(6.4, .03, .04, trimMat, 0, platH, -HD + platD);
+
+// 黑板 + 铝框 + 粉笔槽
+const bw = 4.4, bh = 1.3, by = 1.6;
+const board = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), std({ map: boardTex, roughness: .95 }));
+board.position.set(0, by, -HD + .03); scene.add(board);
+box(bw + .1, .05, .05, frameMat, 0, by + bh / 2, -HD + .03); box(bw + .1, .05, .05, frameMat, 0, by - bh / 2, -HD + .03);
+box(.05, bh, .05, frameMat, -bw / 2, by, -HD + .03); box(.05, bh, .05, frameMat, bw / 2, by, -HD + .03);
+box(bw, .03, .1, frameMat, 0, by - bh / 2 - .02, -HD + .07);
+const chalkCols = [0xf4f1e8, 0xf1d36b, 0xef9aa6];
+chalkCols.forEach((c, i) => box(.08, .012, .012, std({ color: c }), -1.6 + i * .15, by - bh / 2, -HD + .07));
+box(.14, .04, .05, std({ color: 0xd9a63a }), -1.0, by - bh / 2 + .01, -HD + .07);
+
+// 公告板
+const cork = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.0), std({ map: corkTex }));
+cork.position.set(3.3, 1.55, -HD + .03); scene.add(cork);
+box(1.36, .04, .04, trimMat, 3.3, 2.05, -HD + .03); box(1.36, .04, .04, trimMat, 3.3, 1.05, -HD + .03);
+box(.04, 1.0, .04, trimMat, 2.62, 1.55, -HD + .03); box(.04, 1.0, .04, trimMat, 3.98, 1.55, -HD + .03);
+
+// "禁止饮食"标牌：自己画的禁止标志（汉堡 + 吸管杯，红圈斜杠），上角贴两条胶带
+const noFoodTex = canvasTex(600, 800, (g, w, h) => {
+  const red = '#c8302c';
+  g.fillStyle = '#f7f2e6'; g.fillRect(0, 0, w, h);
+  noise(g, w, h, 1200, .05, false);
+  g.strokeStyle = red; g.lineWidth = 14; g.strokeRect(20, 20, w - 40, h - 40);
+  const cx = w / 2, cy = 300, r = 200;
+  // 汉堡
+  g.fillStyle = '#2b2522';
+  g.beginPath(); g.ellipse(cx - 55, cy + 15, 95, 60, 0, Math.PI, 0); g.fill();          // 上面包
+  g.fillRect(cx - 150, cy + 30, 190, 18);                                               // 肉饼
+  g.beginPath(); g.roundRect(cx - 150, cy + 58, 190, 38, 14); g.fill();                 // 下面包
+  g.fillStyle = '#f7f2e6'; g.fillRect(cx - 150, cy + 18, 190, 10); g.fillRect(cx - 150, cy + 48, 190, 10);
+  // 吸管杯
+  g.fillStyle = '#2b2522';
+  g.beginPath(); g.moveTo(cx + 45, cy - 70); g.lineTo(cx + 155, cy - 70); g.lineTo(cx + 140, cy + 96); g.lineTo(cx + 60, cy + 96); g.fill();
+  g.fillRect(cx + 38, cy - 86, 124, 18);
+  g.save(); g.translate(cx + 72, cy - 86); g.rotate(-.22); g.fillRect(-8, -95, 16, 95); g.restore();
+  // 红圈 + 斜杠
+  g.strokeStyle = red; g.lineWidth = 34;
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.moveTo(cx - r * .71, cy - r * .71); g.lineTo(cx + r * .71, cy + r * .71); g.stroke();
+  // 底部红条文字
+  g.fillStyle = red; g.beginPath(); g.roundRect(50, 545, w - 100, 200, 18); g.fill();
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold 72px "Helvetica Neue", Arial, sans-serif'; g.fillText('NO FOOD', cx, 625);
+  g.fillText('OR DRINK', cx, 705);
+});
+function noFoodSign(w, x, y, z, ry = 0, tilt = 0) {
+  const s = new THREE.Group();
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 4 / 3), std({ map: noFoodTex, roughness: .8 }));
+  s.add(paper);
+  const tape = std({ color: 0xe9dcc0, transparent: true, opacity: .8 });
+  for (const sx of [-1, 1]) {
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(w * .3, w * .09), tape);
+    t.position.set(sx * w * .42, w * 2 / 3 - w * .02, .002); t.rotation.z = sx * -.6; s.add(t);
+  }
+  s.position.set(x, y, z); s.rotation.set(0, ry, tilt); scene.add(s); return s;
+}
+noFoodSign(.6, -3.3, 1.72, -HD + .02, 0, .035);           // 前墙，黑板左边
+noFoodSign(.3, HW - .02, 1.5, -1.8, -Math.PI / 2, -.05);    // 右墙，门旁边
+
+// 右墙：两扇推拉门 + 气窗
+const doorMat = std({ color: 0x9a5a2c, roughness: .8 });
+const darkGlass = std({ color: 0x2b3038, roughness: .3 });
+for (const [z0, z1] of [[-3.95, -3.15], [-3.15, -2.35]]) {
+  const zc = (z0 + z1) / 2, dw = z1 - z0;
+  box(.05, 2.2, dw - .02, doorMat, HW - .03, 1.1, zc, { cast: true });
+  box(.06, .5, dw * .55, darkGlass, HW - .04, 1.6, zc);
+}
+box(.06, 2.3, .06, trimMat, HW - .03, 1.15, -4.0); box(.06, 2.3, .06, trimMat, HW - .03, 1.15, -2.3);
+box(.06, .06, 1.76, trimMat, HW - .03, 2.25, -3.15);
+box(.05, .5, 1.6, darkGlass, HW - .03, 2.6, -3.15);
+
+// 后墙：储物格
+const cubby = std({ color: 0x8b5a32 });
+box(6.0, 1.05, .38, cubby, 0, .525, HD - .19, { cast: true });
+for (let i = 0; i <= 8; i++) box(.03, 1.0, .02, std({ color: 0x5a361c }), -3 + i * .75, .525, HD - .37);
+box(6.0, .03, .02, std({ color: 0x5a361c }), 0, .525, HD - .37);
+
+// ---------- 灯光：阴天傍晚 + 暖色日光灯 ----------
+RectAreaLightUniformsLib.init();
+scene.add(new THREE.HemisphereLight(0x9aa6b8, 0x5a3a22, 0.6));
+scene.add(new THREE.AmbientLight(0xffe8d0, 0.45));   // 代替墙面/天花板的漫反射补光
+
+const tubeMat = new THREE.MeshStandardMaterial({ color: 0xfff1d8, emissive: 0xffe7c2, emissiveIntensity: 2.2 });
+const housingMat = std({ color: 0x3c3c40, roughness: .5, metalness: .4 });
+for (const z of [-2.6, 0, 2.6]) for (const x of [-2.8, 0, 2.8]) {
+  box(1.35, .07, .3, housingMat, x, H - .045, z);
+  for (const dz of [-.06, .06]) {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(.022, .022, 1.2, 10), tubeMat);
+    t.rotation.z = Math.PI / 2; t.position.set(x, H - .1, z + dz); scene.add(t);
+  }
+  const ra = new THREE.RectAreaLight(0xffe2b5, 6.5, 1.2, .25);
+  ra.position.set(x, H - .12, z); ra.lookAt(x, 0, z); scene.add(ra);
+}
+// 一盏从上方略偏的平行光负责投影（让桌椅落地）
+const keyLight = new THREE.DirectionalLight(0xffe0bd, 0.9);
+keyLight.position.set(1.5, 8, 3); keyLight.castShadow = true;
+Object.assign(keyLight.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 1, far: 20 });
+keyLight.shadow.mapSize.set(2048, 2048); keyLight.shadow.bias = -0.0004; keyLight.shadow.normalBias = 0.02;
+scene.add(keyLight);
+// 窗外冷色天光
+const windowLight = new THREE.DirectionalLight(0x9fb0c8, 0.7);
+windowLight.position.set(-10, 4, 1); scene.add(windowLight);
+
+// ---------- Meshy 模型 ----------
+// 每个物件按真实尺寸缩放：axis = 量哪条边（m = 最长边，适合朝向不确定的扁平小物件），size = 米
+const SPECS = {
+  desk: ['y', .72], chair: ['y', .82], lectern: ['y', 1.1],
+  backpack_navy: ['y', .42], backpack_purple: ['y', .4],
+  book_stack: ['x', .24], notebook_open: ['x', .34], pencil: ['x', .17],
+  pencil_case_pink: ['x', .21], pencil_case_teal: ['x', .2], water_bottle: ['y', .24],
+  plant_pothos: ['y', .36], plant_flowers: ['y', .3], wall_clock: ['x', .42],
+  chips: ['y', .23], burger: ['x', .12], fried_chicken: ['x', .17], cup_noodles: ['y', .13],
+  gummy_bears: ['y', .15], ice_cream_bar: ['y', .17], latiao: ['y', .16], cola: ['y', .12], school_bell: ['m', .3],
+  // 第二批课桌小物件（Codex 出参考图 → Meshy N1），每张桌子只放不重复的
+  book_green: ['m', .25], paperback_pair: ['m', .2], spiral_notebook: ['m', .27], textbook_open: ['m', .42],
+  pencil_tin: ['m', .2], pencil_pouch_yellow: ['m', .2], pen_holder: ['y', .17], calculator: ['m', .16],
+  stapler: ['m', .15], highlighters: ['m', .13], thermos_pink: ['y', .22], sports_bottle: ['y', .22],
+  tumbler_straw: ['y', .2], mug_cream: ['y', .1],
+};
+const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);                          // 打包版的模型用 meshopt 压缩过
+const templates = {};
+let loaded = 0;
+const progressEl = document.getElementById('progress');
+
+async function loadTemplate(name) {
+  let gltf;
+  try { gltf = await loader.loadAsync(`${MODEL_DIR}/${name}/model.glb`); }
+  catch { console.warn(`缺模型，跳过：${name}`); progressEl.textContent = `${Math.round(++loaded / Object.keys(SPECS).length * 100)}%`; return; }
+  const model = gltf.scene;
+  model.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true; o.receiveShadow = true;
+      o.material.side = THREE.FrontSide;
+      if (o.material.map) o.material.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    }
+  });
+  const [axis, size] = SPECS[name];
+  const b = new THREE.Box3().setFromObject(model), s = new THREE.Vector3(); b.getSize(s);
+  const k = size / (axis === 'm' ? Math.max(s.x, s.y, s.z) : s[axis]);
+  model.scale.setScalar(k);
+  const b2 = new THREE.Box3().setFromObject(model), c = new THREE.Vector3(); b2.getCenter(c);
+  model.position.set(-c.x, -b2.min.y, -c.z);          // 底面中心对齐原点
+  const g = new THREE.Group(); g.add(model);
+  g.userData.size = b2.getSize(new THREE.Vector3());
+  templates[name] = g;
+  progressEl.textContent = `${Math.round(++loaded / Object.keys(SPECS).length * 100)}%`;
+}
+function place(name, x, y, z, ry = 0) {
+  if (!templates[name]) return null;
+  const o = templates[name].clone();
+  o.position.set(x, y, z); o.rotation.y = ry; scene.add(o); return o;
+}
+
+// ---------- 摆场景 ----------
+const COLS = [-3.0, -1.5, 0, 1.5, 3.0];
+const ROWS = [-2.3, -0.94, 0.42, 1.78, 3.14];      // 排距 1.36：坐姿防穿模要把椅子往后拉，1.3 不够
+const PLAYER = { col: 2, row: 2 };
+// 课桌上的小物件：每样只出现一次（铅笔、作业本在玩家桌上，叠书在讲台上，所以不进这个池子）
+const DESK_ITEMS = ['pencil_case_pink', 'pencil_case_teal', 'water_bottle',
+  'book_green', 'paperback_pair', 'spiral_notebook', 'textbook_open', 'pencil_tin', 'pencil_pouch_yellow',
+  'pen_holder', 'calculator', 'stapler', 'highlighters', 'thermos_pink', 'sports_bottle', 'tumbler_straw', 'mug_cream'];
+
+const chairs = {}, desks = {};
+let bell = null, sleepy = null;
+function layout() {
+  const deskTop = templates.desk.userData.size.y;
+  const pool = DESK_ITEMS.filter((n) => templates[n]);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  ROWS.forEach((z0, r) => COLS.forEach((x0, c) => {
+    const isPlayer = r === PLAYER.row && c === PLAYER.col;
+    const x = x0 + (isPlayer ? 0 : jitter(.05)), z = z0 + (isPlayer ? 0 : jitter(.05));
+    const ry = isPlayer ? 0 : jitter(.05);
+    desks[`${r},${c}`] = place('desk', x, 0, z, ry);
+    chairs[`${r},${c}`] = place('chair', x + (isPlayer ? 0 : jitter(.06)), 0, z + .48 + (isPlayer ? .05 : rand() * .12), Math.PI + jitter(.12));
+    if (isPlayer) return;
+    // 大约 3/4 的桌子放一样小物件，从池子里依次取，不会重复
+    if (pool.length && rand() < .75) desks[`${r},${c}`].userData.items = [place(pool.pop(), x + jitter(.2), deskTop, z + jitter(.1), rand() * Math.PI * 2)];
+    if (rand() < .3) place(rand() < .5 ? 'backpack_navy' : 'backpack_purple', x + .42, 0, z + .5, Math.PI / 2 + jitter(.4));
+  }));
+
+  // 玩家的桌子：只放作业本和铅笔，食物不摆在桌上，只在手里（食物栏选）
+  const px = COLS[PLAYER.col], pz = ROWS[PLAYER.row];
+  const book = place('notebook_open', px + .02, deskTop, pz + .02, jitter(.1));
+  // 铅笔斜放在右页上：沿笔杆取 3 个点向下打射线，按书页最高处落下，避免穿模
+  const pen = { x: px + .1, z: pz + .03, ry: -.5 }, half = templates.pencil.userData.size.x / 2 - .01;
+  book.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0);
+  let penY = deskTop;
+  for (const t of [-half, 0, half]) {
+    ray.set(new THREE.Vector3(pen.x + Math.cos(pen.ry) * t, deskTop + .5, pen.z - Math.sin(pen.ry) * t), down);
+    const hit = ray.intersectObject(book, true)[0];
+    if (hit) penY = Math.max(penY, hit.point.y);
+  }
+  place('pencil', pen.x, penY, pen.z, pen.ry);
+  place('backpack_navy', px - .45, 0, pz + .5, -Math.PI / 2);
+
+  // 讲台、钟、窗台植物
+  place('lectern', 0, platH, -HD + .63, 0);                       // 往黑板靠一点，给老师在讲台桌前留出过道
+  place('book_stack', .1, platH + templates.lectern.userData.size.y, -HD + .63, .2);
+  const clock = place('wall_clock', 3.3, 2.5, -HD + .02, 0);
+  // 上课铃：前墙，禁止饮食标牌正上方，正面参考图生成，铃面朝 +Z（教室）
+  bell = place('school_bell', -3.3, 2.3, -HD + .01, 0);
+  place('plant_pothos', -HW + .12, sill + .05, -2.9, Math.PI / 2);
+  place('plant_flowers', -HW + .12, sill + .05, -2.1, Math.PI / 2);
+  place('plant_pothos', -HW + .12, sill + .05, 1.2, .5);
+  // 后墙储物格里塞几个书包
+  place('backpack_purple', -1.8, 1.05, HD - .25, Math.PI);
+  place('backpack_navy', .9, 1.05, HD - .25, Math.PI + .3);
+  return clock;
+}
+
+// ---------- 控制：坐着环顾 / 俯瞰 ----------
+const seat = new THREE.Vector3(COLS[PLAYER.col], 1.12, ROWS[PLAYER.row] + .5);
+let yaw = 0, pitch = -0.32, mode = 'seat';
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enabled = false; orbit.target.set(0, .8, 0);
+function toSeat() { mode = 'seat'; orbit.enabled = false; camera.position.copy(seat); document.body.classList.remove('overview'); }
+function toOverview() { mode = 'orbit'; orbit.enabled = true; camera.position.set(3.8, 2.75, 4.2); orbit.target.set(-.5, .6, -1); orbit.update(); document.body.classList.add('overview'); }
+let drag = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { if (mode === 'seat') drag = { x: e.clientX, y: e.clientY }; });
+addEventListener('pointerup', () => (drag = null));
+addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  yaw -= (e.clientX - drag.x) * .004; pitch -= (e.clientY - drag.y) * .004;
+  yaw = THREE.MathUtils.clamp(yaw, -1.9, 1.9); pitch = THREE.MathUtils.clamp(pitch, -1.2, .7);
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('keydown', (e) => { if (e.key === 'o' || e.key === 'O') toOverview(); if (e.key === 'f' || e.key === 'F') toSeat(); });
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+// 调试用：window.view('seat'|'orbit', yaw, pitch)
+window.__three = { camera, orbit, scene, renderer };
+window.view = (m, y, p) => { m === 'orbit' ? toOverview() : toSeat(); if (y !== undefined) yaw = y; if (p !== undefined) pitch = p; };
+
+// ---------- 食物选择栏 + 手里拿着的食物 ----------
+// full = 饱腹，noise = 动静（声音/气味，越大越容易被老师发现），1–3，先拍脑袋定，之后按玩法调
+// gain = 吃完一份加多少饱腹，time = 吃一份要按住几秒，rate = 吃的时候动静每秒涨多少（动静满 1 老师就回头）
+const FOODS = [
+  { id: 'gummy_bears', name: '小熊软糖', stock: 5, full: 1, noise: 1, gain: 4, time: 1.6, rate: .09, tip: '一颗一颗塞，几乎没声音' },
+  { id: 'ice_cream_bar', name: '雪糕', stock: 5, full: 1, noise: 1, gain: 4, time: 2.0, rate: .09, tip: '安静，但会化' },
+  { id: 'cola', name: '可乐', stock: 4, full: 1, noise: 3, gain: 3, time: 1.2, rate: .4, tip: '拉环"呲"的一声，全班回头', ry: Math.PI },
+  { id: 'latiao', name: '辣条', stock: 4, full: 2, noise: 2, gain: 4, time: 2.2, rate: .18, tip: '香味有点冲' },
+  { id: 'chips', name: '薯片', stock: 4, full: 2, noise: 3, gain: 5, time: 2.4, rate: .3, tip: '咔嚓咔嚓，全班都听得见' },
+  { id: 'burger', name: '汉堡', stock: 3, full: 3, noise: 2, gain: 8, time: 3.6, rate: .21, tip: '一口下去很顶饱' },
+  { id: 'fried_chicken', name: '炸鸡', stock: 3, full: 3, noise: 2, gain: 8, time: 3.6, rate: .22, tip: '满手是油' },
+  { id: 'cup_noodles', name: '泡面', stock: 2, full: 3, noise: 3, gain: 11, time: 4.0, rate: .25, tip: '吸溜声 + 整间教室都是味' },
+];
+let current = -1, pending = -1, swapStart = -1e9;
+const hotbar = document.getElementById('hotbar');
+const infoEl = document.getElementById('foodinfo');
+const dots = (n) => '●'.repeat(n) + '<i>' + '●'.repeat(3 - n) + '</i>';
+FOODS.forEach((f, i) => {
+  const b = document.createElement('button');
+  b.className = 'slot'; b.title = f.name;
+  b.innerHTML = `<span class="cnt"></span><img src="${asset(`${MODEL_DIR}/${f.id}/thumbnails/thumbnail.png`)}" alt="${f.name}" draggable="false">`;
+  b.addEventListener('click', () => selectFood(i, 0));
+  b.addEventListener('pointerenter', () => showInfo(i));                 // 鼠标移上去就显示这样食物（没解锁的也能看到名字）
+  b.addEventListener('pointerleave', () => { if (pending >= 0) showInfo(pending, false); });
+  hotbar.appendChild(b);
+});
+
+// ---- 组合：一节课里把一组食物各吃完一份，额外加饱腹和分数（顺序随意） ----
+const COMBOS = [
+  { name: '甜甜的', foods: ['gummy_bears', 'ice_cream_bar'], full: 2, pts: 12 },
+  { name: '小卖部三件套', foods: ['latiao', 'chips', 'cola'], full: 5, pts: 35 },
+  { name: '放学标配', foods: ['latiao', 'ice_cream_bar'], full: 3, pts: 15 },
+  { name: '快餐套餐', foods: ['burger', 'fried_chicken', 'cola'], full: 6, pts: 40 },
+  { name: '深夜泡面', foods: ['cup_noodles', 'latiao'], full: 4, pts: 20 },
+];
+// ---- 分级解锁：开局只有便宜的小零食；完成某个"钥匙组合"才解锁下一级（越往后越顶饱）----
+const TIERS = [
+  { foods: ['gummy_bears', 'ice_cream_bar', 'cola'] },
+  { foods: ['latiao', 'chips'], key: '甜甜的' },
+  { foods: ['burger', 'fried_chicken'], key: '小卖部三件套' },
+  { foods: ['cup_noodles'], key: '快餐套餐' },
+];
+const BAN_TIME = 15;                                                   // 被没收的冷却时间（秒）；太久会卡住解锁
+const foodName = (id) => FOODS.find((f) => f.id === id).name;
+const keyOf = (id) => TIERS.find((t) => t.foods.includes(id))?.key;
+const comboEl = document.getElementById('combos');
+comboEl.innerHTML = '<div class="comboHead">组合 <small>吃齐有奖励，有的还能解锁新零食</small></div>' + COMBOS.map((c) => {
+  const tier = TIERS.find((t) => t.key === c.name);
+  const sub = tier ? `<small>🔓 解锁 ${tier.foods.map(foodName).join('、')}</small>` : '';
+  return `<div class="combo${tier ? ' key' : ''}"><b>${c.name}${sub}</b>${c.foods.map((id) => `<span class="ci" data-id="${id}"><img data-id="${id}" src="${asset(`${MODEL_DIR}/${id}/thumbnails/thumbnail.png`)}" alt="" draggable="false"></span>`).join('')}<em>+${c.full}</em></div>`;
+}).join('');
+function renderCombos() {
+  const banned = new Set([...G.banned].map((i) => FOODS[i].id));
+  const now = FOODS[pending >= 0 ? pending : current]?.id;            // 手里这样食物属于哪些组合：整行高亮
+  COMBOS.forEach((c, i) => {
+    const row = comboEl.children[i + 1];
+    row.classList.toggle('cur', c.foods.includes(now));
+    row.querySelectorAll('img').forEach((im) => {
+      const id = im.dataset.id;
+      im.classList.toggle('now', id === now);
+      im.classList.toggle('got', G.ate.has(id));
+      im.classList.toggle('lost', !G.ate.has(id) && banned.has(id));
+      im.classList.toggle('locked', !G.unlocked.has(id));
+    });
+    row.querySelectorAll('.ci').forEach((ci) => {                      // 被没收：小图上也有冷却
+      const i = FOODS.findIndex((f) => f.id === ci.dataset.id);
+      ci.classList.toggle('got', G.ate.has(ci.dataset.id));
+      ci.classList.toggle('ban', G.banned.has(i) && !G.ate.has(ci.dataset.id));
+    });
+    row.classList.toggle('done', G.combos.has(c.name));
+    row.classList.toggle('failed', !G.combos.has(c.name) && c.foods.some((id) => !G.ate.has(id) && G.unlocked.has(id) && !G.stock[id]));
+    row.classList.toggle('far', !G.combos.has(c.name) && c.foods.some((id) => !G.unlocked.has(id)));   // 还有没解锁的食物：先淡一点
+  });
+  FOODS.forEach((f, i) => {
+    const b = hotbar.children[i], lock = !G.unlocked.has(f.id), n = G.stock[f.id];
+    b.querySelector('.cnt').textContent = lock || !n ? '' : `×${n}`;
+    b.classList.toggle('empty', !lock && !n);
+    b.classList.toggle('locked', lock);
+    b.title = lock ? `${f.name}（完成「${keyOf(f.id)}」解锁）` : f.name;
+  });
+}
+function unlockAfter(comboName) {
+  const tier = TIERS.find((t) => t.key === comboName);
+  if (!tier) return '';
+  tier.foods.forEach((id) => {
+    G.unlocked.add(id);
+    const b = hotbar.children[FOODS.findIndex((f) => f.id === id)];
+    b.classList.remove('unlock'); void b.offsetWidth; b.classList.add('unlock');
+  });
+  return tier.foods.map(foodName).join(' ');
+}
+function checkCombos() {
+  for (const c of COMBOS) {
+    if (G.combos.has(c.name) || !c.foods.every((id) => G.ate.has(id))) continue;
+    G.combos.add(c.name); G.full = Math.min(GOAL, G.full + c.full); G.score += c.pts;
+    const u = unlockAfter(c.name); toast(u ? `${c.name} ✓  🔓 ${u}` : `${c.name} ✓  +${c.full}`);
+  }
+  renderCombos();
+}
+// 没收 = 冷却：格子和组合小图上的暗色扇形随时间退掉，冷却完自动恢复（格子弹一下）
+function updateBans(dt) {
+  for (const i of [...G.banned]) {
+    G.banT[i] -= dt;
+    const cd = Math.max(0, G.banT[i] / BAN_TIME), b = hotbar.children[i];
+    b.style.setProperty('--cd', cd);
+    comboEl.querySelectorAll(`.ci[data-id="${FOODS[i].id}"]`).forEach((ci) => ci.style.setProperty('--cd', cd));
+    if (G.banT[i] <= 0) {
+      G.banned.delete(i); b.classList.remove('banned', 'unlock'); void b.offsetWidth; b.classList.add('unlock');
+    }
+  }
+}
+
+const hand = new THREE.Group();
+hand.position.set(.15, -.16, -.42);
+camera.add(hand); handScene.add(camera);
+const held = {};
+function heldModel(id) {
+  if (held[id]) return held[id];
+  const s = templates[id].userData.size, k = .12 / Math.max(s.x, s.y, s.z);
+  const o = templates[id].clone();
+  o.scale.setScalar(k); o.position.y = -s.y * k / 2;          // 以中心为支点
+  const pivot = new THREE.Group(); pivot.add(o);
+  pivot.rotation.set(.25, -.55 + (FOODS.find((f) => f.id === id).ry || 0), .08);   // ry：个别模型正面朝向不同，单独转
+  pivot.visible = false;
+  hand.add(pivot);
+  return (held[id] = pivot);
+}
+// 食物信息条：名字 + 饱腹 + 动静 + 一句描述；没解锁的显示怎么解锁
+function showInfo(i, pop = true) {
+  const f = FOODS[i], locked = G.state !== 'menu' && !G.unlocked.has(f.id);
+  infoEl.innerHTML = locked
+    ? `<b>🔒 ${f.name}</b><span>饱腹 ${dots(f.full)}</span><span>动静 ${dots(f.noise)}</span><em>完成「${keyOf(f.id)}」组合解锁</em>`
+    : `<b>${f.name}</b><span>饱腹 ${dots(f.full)}</span><span>动静 ${dots(f.noise)}</span><em>${f.tip}</em>`;
+  if (pop) { infoEl.classList.remove('pop'); void infoEl.offsetWidth; infoEl.classList.add('pop'); }
+}
+// dir：被没收的食物跳过（0 = 点到没收的就不换）
+function selectFood(i, dir = 1) {
+  i = (i + FOODS.length) % FOODS.length;
+  const off = (j) => G.banned.has(j) || !G.unlocked.has(FOODS[j].id) || !G.stock?.[FOODS[j].id];
+  if (!dir && !G.unlocked.has(FOODS[i].id)) { showInfo(i); toast(`🔒 ${FOODS[i].name}：完成「${keyOf(FOODS[i].id)}」解锁`); return; }
+  if (!dir && G.stock && !G.stock[FOODS[i].id]) { toast('吃光了'); return; }
+  for (let n = 0; off(i) && n < FOODS.length; n++) { if (!dir) return; i = (i + dir + FOODS.length) % FOODS.length; }
+  if (i === pending) return;
+  G.progress = 0; G.canOpen = false;                                 // 换了食物，可乐要重新开罐
+  pending = i; swapStart = performance.now();
+  [...hotbar.children].forEach((b, j) => b.classList.toggle('active', j === i));
+  const f = FOODS[i];
+  showInfo(i);
+}
+// 换食物：先放下去，到底时换模型，再举起来
+function updateHand(t) {
+  const p = Math.min((t - swapStart) / 360, 1);
+  if (p >= .5 && current !== pending) {
+    if (current >= 0) heldModel(FOODS[current].id).visible = false;
+    current = pending; heldModel(FOODS[current].id).visible = true;
+  }
+  const down = Math.sin(p * Math.PI);                           // 0 → 1 → 0
+  const e = G.eatT * G.eatT * (3 - 2 * G.eatT);                  // 0 = 藏在桌下，1 = 举到嘴边
+  const chew = e > .95 ? Math.sin(t * .03) * .006 : 0;
+  const restX = Math.min(.21, .6 * .252 * camera.aspect);        // 竖屏时往里收，别出画
+  hand.position.x = THREE.MathUtils.lerp(restX, .03, e);
+  hand.position.y = THREE.MathUtils.lerp(-.13 - down * .22, -.045, e) + Math.sin(t * .0021) * .004 + chew;
+  hand.position.z = THREE.MathUtils.lerp(-.42, -.27, e);
+  hand.rotation.z = Math.sin(t * .0013) * .015 + e * .25;
+  hand.visible = mode === 'seat' && current >= 0;
+}
+addEventListener('keydown', (e) => { const n = +e.key; if (n >= 1 && n <= FOODS.length) selectFood(n - 1, 0); });
+let wheelLock = 0;
+addEventListener('wheel', (e) => {
+  if (mode !== 'seat' || performance.now() < wheelLock) return;
+  wheelLock = performance.now() + 120;
+  const d = Math.sign(e.deltaY) || 1;
+  selectFood((pending < 0 ? 0 : pending) + d, d);
+}, { passive: true });
+// 没有鼠标也能换：键盘左右方向键
+addEventListener('keydown', (e) => {
+  if (e.code !== 'ArrowLeft' && e.code !== 'ArrowRight') return;
+  e.preventDefault();
+  const d = e.code === 'ArrowRight' ? 1 : -1;
+  selectFood((pending < 0 ? 0 : pending) + d, d);
+});
+
+// ---------- 角色（Meshy 生成 → 自动绑骨 → 动画库动作）----------
+// anims.glb 里的 clip 顺序 = characters_meshy.py 里 action_ids 的顺序
+const CHAR_DIR = '../ref/characters/meshy';
+const CHARS = {
+  // 老师：Meshy 第二套动作，在 Blender 里修过（scripts/blender/）：待机/走路时手臂收拢、身体朝向扳正
+  teacher: { h: 1.75, file: 'anims2_fixed.glb', stripRoot: true, byName: {
+    idle: 'Short_Breathe_and_Look_Around', lookAround: 'Short_Breathe_and_Look_Around', angry: 'Stand_Talking_Angry', alert: 'Talk_with_Left_Hand_on_Hip',
+    walk: 'Thoughtful_Walk', walkCasual: 'Casual_Walk', scratch: 'Confused_Scratch', sway: 'Happy_Sway_Standing', talkHip: 'Talk_with_Left_Hand_on_Hip' } },
+  listener_girl: { h: 1.5, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  listener_boy: { h: 1.55, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  sleepy_boy: { h: 1.6, clips: ['sleepDesk', 'doze', 'wake'] },
+  student_bob_girl: { h: 1.5, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  student_buzz_boy: { h: 1.68, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  student_buns_girl: { h: 1.45, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  student_curly_boy: { h: 1.5, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  student_monitor_boy: { h: 1.65, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  student_bowlcut_boy: { h: 1.45, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+  student_pigtail_girl: { h: 1.52, file: 'anims_sit.glb', clips: ['answer', 'arms', 'doze'] },
+};
+const charTpl = {};
+async function loadChar(name) {
+  let gltf;
+  try { gltf = await loader.loadAsync(`${CHAR_DIR}/${name}/${CHARS[name].file || 'anims.glb'}`); }
+  catch { console.warn(`角色还没生成：${name}`); return; }
+  const root = gltf.scene;
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+  const b = new THREE.Box3().setFromObject(root), s = new THREE.Vector3(); b.getSize(s);
+  const k = CHARS[name].h / s.y;                       // 按身高缩放（绑定姿势的包围盒）
+  const clips = {};
+  if (CHARS[name].byName) for (const [k, n] of Object.entries(CHARS[name].byName)) clips[k] = gltf.animations.find((c) => c.name === n);
+  else gltf.animations.forEach((c, i) => (clips[CHARS[name].clips[i] || c.name] = c));
+  if (CHARS[name].stripRoot) gltf.animations.forEach((c) => c.tracks.forEach((t) => {   // 原地动作：Hips 只保留上下起伏
+    if (!/Hips\.position$/.test(t.name)) return;
+    const v = t.values;
+    for (let i = 3; i < v.length; i += 3) { v[i] = v[0]; v[i + 2] = v[2]; }
+  }));
+  charTpl[name] = { root, k, minY: b.min.y, clips };
+}
+const mixers = [];
+function placeChar(name, x, y, z, ry, clip, offset = 0) {
+  const tpl = charTpl[name]; if (!tpl) return null;
+  const o = SkeletonUtils.clone(tpl.root);
+  o.scale.setScalar(tpl.k);
+  const g = new THREE.Group(); g.add(o);
+  o.position.y = -tpl.minY * tpl.k;                     // 脚底对齐地面
+  g.position.set(x, y, z); g.rotation.y = ry; scene.add(g);
+  const mixer = new THREE.AnimationMixer(o);
+  const a = mixer.clipAction(tpl.clips[clip]);
+  if (clip === 'arms') { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; offset = tpl.clips[clip].duration - .01; }   // 抱臂：开头是放手→抱臂的过渡，只播一次停在抱臂姿势
+  a.play(); a.time = offset;
+  mixers.push(mixer);
+  g.userData = { mixer, clips: tpl.clips, action: a, name };
+  return g;
+}
+function seatStudents() {
+  // 坐着的学生：坐在椅子位置，面朝黑板（-Z）
+  // 坐姿动画的臀部离角色原点有 20–50cm 偏移：先摆上去，再按 Hips 骨骼的实际位置挪到椅面中心
+  const hip = new THREE.Vector3();
+  // 防穿模（2026-11-08 逐帧检测得出）：坐姿动画会往前俯身，人连同椅子往后拉 dz、往上抬 dy，
+  // 保证每一帧上半身都不插进桌板、大腿正好坐在椅面上（椅面 0.465m，桌面 0.72m）
+  // dz 里椅子最多往后退 0.2m（再多会撞到后排桌子），剩下的让自己的桌子往前挪（桌上的小物件跟着走）
+  const SEAT_FIX = {   // 2026-11-08 按新坐姿（端坐 / 抱臂 / 低头打盹）重算
+    listener_boy: [.02, .12], listener_girl: [.28, .06], student_bob_girl: [.02, .1], student_bowlcut_boy: [.02, .1],
+    student_buns_girl: [.22, .08], student_buzz_boy: [.02, .02], student_curly_boy: [.14, .22], student_monitor_boy: [.02, 0],
+    student_pigtail_girl: [.12, .12], sleepy_boy: [0, .02],
+  };
+  const sitAt = (name, c, r, clip, off) => {
+    const ch = chairs[`${r},${c}`], g = placeChar(name, ch.position.x, 0, ch.position.z, Math.PI, clip, off);
+    if (!g) return;
+    g.userData.mixer.update(0); g.updateMatrixWorld(true);
+    g.getObjectByName('Hips').getWorldPosition(hip);
+    g.position.x += ch.position.x - hip.x;
+    g.position.z += ch.position.z - .02 - hip.z;
+    seated.push({ name, g, ch, r, c });
+    return g;
+  };
+  // 所有人坐下后再统一往后拉：从前排往后排做，前一排的椅子已经挪好了
+  const seated = [], box = new THREE.Box3();
+  const zMin = (o) => (o ? box.setFromObject(o).min.z : Infinity), zMax = (o) => (o ? box.setFromObject(o).max.z : -Infinity);
+  const applySeatFix = () => seated.sort((a, b) => a.r - b.r).forEach(({ name, g, ch, r, c }) => {
+    const [dz, dy] = SEAT_FIX[name] || [0, 0];
+    g.position.y += dy;
+    if (!dz) return;
+    const desk = desks[`${r},${c}`];
+    const back = Math.max(0, Math.min(dz, zMin(desks[`${r + 1},${c}`]) - zMax(ch) - .03));      // 椅背别顶到后排桌子
+    const fwd = Math.max(0, Math.min(dz - back, zMin(desk) - zMax(chairs[`${r - 1},${c}`]) - .03)); // 桌子别顶到前排椅子
+    ch.position.z += back; g.position.z += back;
+    if (desk && fwd) [desk, ...(desk.userData.items || [])].forEach((o) => { if (o) o.position.z -= fwd; });
+    if (back + fwd < dz - .005) console.warn(`座位空间不够：${name} 还差 ${(dz - back - fwd).toFixed(2)}m`);
+  });
+  // 每个座位一个不同的人，不重复
+  sitAt('listener_girl', 1, 3, 'answer', 0);
+  sitAt('student_curly_boy', 3, 3, 'doze', 3);
+  sitAt('student_buzz_boy', 0, 1, 'arms', 0);
+  sitAt('student_buns_girl', 4, 1, 'answer', 2.3);
+  sitAt('student_monitor_boy', 2, 0, 'answer', 4.1);       // 班长坐第一排正中
+  sitAt('student_bob_girl', 2, 3, 'answer', 1.4);           // 主角正后方（正前方空着，不挡视线）
+  sitAt('listener_boy', 1, 2, 'doze', 6);               // 主角左边
+  sitAt('student_bowlcut_boy', 1, 0, 'arms', 0);         // 第一排左边（主角左前方）：坐 (1,1) 会把左边同桌挤得没地方往后拉
+  sitAt('student_pigtail_girl', 3, 1, 'answer', 5.6);       // 主角右前方
+  sleepy = sitAt('sleepy_boy', 3, 2, 'sleepDesk', 0);             // 主角右边：趴桌睡觉
+  scene.updateMatrixWorld(true); if (!location.search.includes('nofix')) applySeatFix();   // ?nofix：调试时看原始坐姿位置
+  FRONT_Z = Math.min(...COLS.map((_, c) => zMin(desks[`0,${c}`]))) - .24;   // 老师站到讲台前，离第一排桌子留出身位
+  // 老师：讲台左边，面朝学生
+  return placeChar('teacher', -1, platH, BOARD_Z, Math.PI, 'idle');
+}
+
+// ---------- 游戏：老师背过身写板书时偷吃，被看到就扣心 ----------
+const $ = (id) => document.getElementById(id);
+const CLASS_TIME = 180, GOAL = 100, HEARTS = 3;
+$('goalTxt').textContent = GOAL;
+const lerp = THREE.MathUtils.lerp, rnd = (a, b) => a + Math.random() * (b - a);
+const G = { state: 'menu', stock: Object.fromEntries(FOODS.map((f) => [f.id, f.stock])), banned: new Set(), banT: {}, ate: new Set(), combos: new Set(), unlocked: new Set(TIERS[0].foods), eatT: 0, holding: false, progress: 0 };
+const T = { phase: 'idle', t: 0, x: -1, z: 0, ry: Math.PI, say: 0, queue: [], step: null };
+let teacher = null;
+
+function resetGame() {
+  Object.assign(G, { state: 'play', time: CLASS_TIME, full: 0, hearts: HEARTS, combo: 0, bestCombo: 0, score: 0, noise: 0,
+    progress: 0, holding: false, needRelease: false, eatT: 0, snore: 0, practice: tipsOn && !seenTips.has('cough'), nextSnore: rnd(16, 22), eaten: 0 });
+  G.stock = Object.fromEntries(FOODS.map((f) => [f.id, f.stock])); G.banned.clear(); G.banT = {}; G.ate.clear(); G.combos.clear(); G.unlocked = new Set(TIERS[0].foods); renderCombos();
+  [...hotbar.children].forEach((b) => b.classList.remove('banned', 'unlock'));
+  pending = -1; selectFood(0, 1);
+  Object.assign(T, { x: -1, z: BOARD_Z, ry: Math.PI, say: 0, queue: [], step: null, heard: false });
+  doNext([{ wait: 8, clip: 'idle', phase: 'write' }]);
+  document.body.classList.remove('menu');
+  $('overlay').hidden = true;
+  toSeat(); yaw = 0; pitch = -.2;
+}
+
+// ---- 老师 ----
+function playClip(g, name, fade = .25) {
+  const { mixer, clips } = g.userData, next = mixer.clipAction(clips[name]);
+  if (g.userData.action === next) return;
+  next.reset().play(); g.userData.action.crossFadeTo(next, fade, false); g.userData.action = next;
+}
+function say(text, secs) { $('bubble').textContent = text; T.say = secs; }
+const progressK = () => 1 - G.time / CLASS_TIME;                     // 0 → 1，越往后老师越勤快
+const writeDur = () => rnd(lerp(5.5, 3.5, progressK()), lerp(8, 5.5, progressK()));
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const faceSeat = () => Math.atan2(seat.x - T.x, seat.z - T.z);          // 正对玩家的朝向（ry=0 朝向 +Z，即学生）
+// 老师脸朝向和"老师→玩家"方向夹角小于 ~37° 就算看得见（侧身走、背对都看不见）
+const teacherLooking = () => Math.abs(angDiff(faceSeat(), T.ry)) < .78;
+
+// 老师的动作排成一个队列：走到某处 / 转身 / 原地停一会儿（带动作和状态）/ 咳嗽预警
+// 队列空了就从"写板书"状态挑下一件事。凡是要转向学生（回头、走到讲台前、走下过道）之前一定先咳嗽。
+const BOARD_Z = -HD + .95, EDGE_Z = -HD + platD - .05;
+let FRONT_Z = -HD + platD + .25;                                  // 讲台前停的位置；摆完桌子后按第一排桌子实际位置重算
+const AISLE_X = 2.25, WALK_SPEED = .62;
+const boardX = () => (Math.random() < .5 ? -1 : 1) * rnd(.8, 2.1);
+const teacherY = (z) => platH * THREE.MathUtils.clamp((-HD + platD + .1 - z) / .1, 0, 1);   // 讲台边缘上下台阶
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+function doNext(steps) { T.queue = steps; T.step = null; }
+// 讲台桌在正中间：横穿的时候从讲台桌前面绕过去
+function walkTo(x, z, fx = T.x, fz = T.z) {
+  const out = [];
+  if (z < EDGE_Z && fz < EDGE_Z + .05 && (Math.sign(x) !== Math.sign(fx) || Math.abs(x) < .6 || Math.abs(fx) < .6)) {
+    const sx = Math.sign(fx) || 1;                                        // 讲台桌（x ±0.54, z ≥ -3.37）：从桌前绕过，离桌角留 15cm，一直侧身
+    out.push({ walk: [sx * .85, -3.26] }, { walk: [-sx * .85, -3.26] });
+  }
+  out.push({ walk: [x, z] });
+  return out;
+}
+const inPractice = () => G.practice && (CLASS_TIME - G.time < 20 || G.eaten < 1);
+const warnStep = () => ({ warn: lerp(.95, .6, progressK()) });
+const writeSteps = (extra = 0) => [{ turn: Math.PI, speed: 4 }, { wait: writeDur() + extra, clip: Math.random() < .2 ? 'scratch' : 'idle', phase: 'write' }];
+function backToBoardSteps(extra = 0) {                                     // 从哪儿都能走回黑板前接着写
+  const steps = [];
+  let fx = THREE.MathUtils.clamp(T.x, -2.6, 2.6);
+  if (Math.abs(fx) < .85) fx = (Math.sign(fx) || 1) * .9;                // 别正对着走进讲台桌
+  if (T.z > EDGE_Z) steps.push({ walk: [fx, EDGE_Z] }, { walk: [fx, BOARD_Z] });   // 先走到讲台桌旁边，再直着回黑板，别斜穿桌角
+  const bx = Math.abs(fx) > .3 ? Math.sign(fx) * rnd(.8, 2.1) : boardX();   // 就近回到同一侧的黑板前
+  steps.push(...walkTo(bx, BOARD_Z, fx, Math.min(T.z, BOARD_Z)));
+  return [...steps, ...writeSteps(extra)];
+}
+function planActivity() {
+  if (inPractice()) return writeSteps();
+  if (G.practice) { G.practice = false; tip('go', '练习结束，老师开始<b>到处走动、回头</b>了！<br>听到咳嗽就松手', $('teacherChip'), { dur: 4 }); }
+  const k = progressK(), r = Math.random();
+  const lookSteps = (secs) => [{ turn: 'seat', speed: lerp(8, 11, k) }, { wait: secs, clip: pick(['talkHip', 'alert', 'idle']), phase: 'watch' }];
+  if (r < .34) {                                                       // 在讲台上踱步、停下来晃一晃 / 挠头 / 东张西望（侧身，不看学生）
+    const steps = [];
+    let cx = T.x;
+    for (let n = Math.random() < .4 ? 2 : 1; n > 0; n--) {
+      let x; do { x = (Math.random() < .5 ? -1 : 1) * rnd(.9, 2.7); } while (Math.abs(x - cx) < 1);   // 只沿讲台横着走，侧身不看学生
+      steps.push(...walkTo(x, BOARD_Z, cx, BOARD_Z)); cx = x;
+      steps.push({ turn: (x > 0 ? 1 : -1) * Math.PI / 2 + rnd(-.25, .9) * Math.sign(x), speed: 3 },
+        { wait: rnd(1.8, 3), clip: pick(['sway', 'lookAround', 'scratch', 'idle']), phase: 'idle' });
+    }
+    return [...steps, ...writeSteps()];
+  }
+  if (r < .64) {                                                       // 回头看一眼全班（偶尔假动作）
+    if (k > .3 && Math.random() < .14) return [{ say: '！' }, ...lookSteps(rnd(1.6, 2.4))];
+    if (k > .15 && Math.random() < .22) return [warnStep(), { turn: Math.PI / 2 * (Math.random() < .5 ? 1 : -1), speed: 6 }, { wait: .5, clip: 'alert', phase: 'fake' }];
+    return [warnStep(), ...lookSteps(rnd(1.6, 2.4))];
+  }
+  if (r < .82) {                                                       // 走到讲台前面，叉腰看大家
+    const x = rnd(-1.6, 1.6);
+    return [warnStep(), { walk: [T.x, EDGE_Z] }, { walk: [x, FRONT_Z] }, ...lookSteps(rnd(1.4, 2.2))];   // 先直着走出讲台桌，别斜穿桌角
+  }
+  const side = Math.random() < .5 ? -1 : 1;                            // 沿靠墙的过道走下去，看看窗外 / 墙上，再走回来
+  return [...walkTo(side * AISLE_X, BOARD_Z), warnStep(), { walk: [side * AISLE_X, rnd(-1.4, -.4)] },
+    { turn: side * Math.PI / 2, speed: 4 }, { wait: rnd(2, 3.2), clip: 'lookAround', phase: 'idle' }];
+}
+function interrupt(steps) { doNext(steps); }
+function updateTeacher(dt) {
+  if (!teacher) return;
+  // 老师的耳朵：动静过半会起疑——停下、"嗯……？"、愣一下再转身（这一下是松手的机会）；动静快满直接回头
+  const busy = ['angry', 'watch', 'warn', 'suspect'].includes(T.phase) || teacherLooking() || inPractice();
+  if (!busy && G.noise >= .85) {
+    say('嗯？谁在吃东西？', 1.8); G.noise = .55; sfx('huh'); T.heard = true;
+    interrupt([{ turn: 'seat', speed: 9 }, { wait: rnd(1.8, 2.6), clip: 'alert', phase: 'watch' }]);
+  } else if (!busy && !T.heard && G.noise >= .5) {
+    say('嗯……？', 1.2); sfx('huh'); T.heard = true;
+    interrupt([{ wait: rnd(.5, .8), clip: 'lookAround', phase: 'suspect' }, { turn: 'seat', speed: 8 }, { wait: rnd(1.6, 2.4), clip: 'alert', phase: 'watch' }]);
+  }
+  if (G.noise < .3) T.heard = false;                                   // 安静下来以后才会再次起疑
+  if (!T.step) {
+    if (!T.queue.length) T.queue = T.phase === 'write' ? planActivity() : backToBoardSteps(T.phase === 'angry' ? 1 : 0);
+    T.step = T.queue.shift(); T.t = 0;
+    const st = T.step;
+    if (st.say) { say(st.say, .8); T.step = null; return; }
+    if (st.warn) { T.phase = 'warn'; say('咳咳……', 1); sfx('cough'); playClip(teacher, 'idle'); }
+    if (st.wait) { T.phase = st.phase; playClip(teacher, st.clip, .35); }
+    if (st.walk) { T.phase = T.phase === 'warn' || T.phase === 'watch' ? 'walkDanger' : 'walk'; playClip(teacher, 'walk', .3); }
+  }
+  const st = T.step; T.t += dt;
+  const rotTo = (target, speed) => {
+    let d = angDiff(target, T.ry);
+    // 转身别从"正对学生"那边扫过去（除非本来就是要看学生）：绕另一边转
+    const fs = angDiff(faceSeat(), T.ry);
+    if (Math.abs(angDiff(target, faceSeat())) > .65 && Math.sign(fs) === Math.sign(d) && Math.abs(fs) < Math.abs(d)) d -= Math.sign(d) * Math.PI * 2;
+    T.ry += Math.sign(d) * Math.min(Math.abs(d), speed * dt); return Math.abs(d) < .02;
+  };
+  if (st.warn !== undefined) { if (T.t > st.warn) T.step = null; }
+  else if (st.wait !== undefined) { if (T.t > st.wait) T.step = null; }
+  else if (st.turn !== undefined) { if (rotTo(st.turn === 'seat' ? faceSeat() + (st.off || 0) : st.turn, st.speed)) T.step = null; }
+  else if (st.walk) {
+    const [x, z] = st.walk, dx = x - T.x, dz = z - T.z, dist = Math.hypot(dx, dz);
+    if (dist < .03) { T.step = null; if (!T.queue[0]?.walk) playClip(teacher, 'idle', .3); }
+    else {
+      const aligned = rotTo(Math.atan2(dx, dz), 4.5) || Math.abs(angDiff(Math.atan2(dx, dz), T.ry)) < .5;
+      if (aligned) { const m = Math.min(dist, WALK_SPEED * dt); T.x += dx / dist * m; T.z += dz / dist * m; }
+    }
+  }
+  teacher.position.set(T.x, teacherY(T.z), T.z);
+  teacher.rotation.y = T.ry;
+}
+
+// ---- 吃 ----
+function updateEating(dt) {
+  const f = FOODS[current];
+  const can = mode === 'seat' && current >= 0 && current === pending && !G.banned.has(current) && G.stock[FOODS[current]?.id] > 0;
+  const want = G.holding && can;
+  G.eatT = THREE.MathUtils.clamp(G.eatT + (want ? dt / .18 : -dt / .12), 0, 1);
+  if (want && G.eatT >= 1) {
+    G.progress += dt / f.time;
+    if (G.snore <= 0) G.noise += f.rate * dt;          // 动静涨慢一点，别没吃两口就把老师引回头
+    if (G.progress >= 1) finishPortion(f);
+  } else { G.noise -= .16 * dt; G.progress = Math.max(0, G.progress - .05 * dt); }   // 放下了，这一份慢慢"凉了"
+  G.noise = THREE.MathUtils.clamp(G.noise, 0, 1);
+  if (teacherLooking() && G.eatT > .3 && T.phase !== 'angry') caught(f);
+}
+function finishPortion(f) {
+  G.progress = 0; G.combo++; G.bestCombo = Math.max(G.bestCombo, G.combo); G.eaten++;
+  const pts = Math.round(f.gain * (1 + .15 * (G.combo - 1)));
+  G.score += pts; G.full = Math.min(GOAL, G.full + f.gain);
+  floatText(`+${f.gain} 饱腹` + (G.combo > 1 ? `  连吃 ×${G.combo}` : ''));
+  G.ate.add(f.id); G.stock[f.id]--; checkCombos();
+  if (G.full < GOAL && !G.stock[f.id]) { G.needRelease = true; G.holding = false; selectFood(current + 1, 1); outOfFood(); }
+  if (G.full >= GOAL) endGame('win');
+}
+function outOfFood() {
+  const left = FOODS.some((f) => G.stock[f.id] > 0);
+  if (!left && G.full < GOAL) endGame('hungry');
+}
+function caught(f) {
+  G.hearts--; G.combo = 0; G.progress = 0; G.holding = false; G.needRelease = true; G.eatT = 0;
+  const keyNeed = COMBOS.some((c) => TIERS.some((t) => t.key === c.name) && !G.combos.has(c.name) && c.foods.includes(f.id)) && !G.ate.has(f.id);
+  if (!(keyNeed && G.stock[f.id] <= 1)) G.stock[f.id]--;
+  G.banned.add(current); G.banT[current] = BAN_TIME; hotbar.children[current].style.setProperty('--cd', 1); hotbar.children[current].classList.add('banned');
+  say('上课不许吃东西！没收！', 2.4);
+  interrupt([{ turn: 'seat', speed: 10 }, { wait: 2.6, clip: 'angry', phase: 'angry' }]); T.phase = 'angry';
+  toast('没收！'); flash(); sfx('caught'); renderCombos();
+  tip('caught', '被抓到了！扣 <b>1 颗心</b>，<br>这样零食要<b>冷却</b>一会儿才能再吃', () => hotbar.children[current], { dur: 5 });
+  if (G.hearts <= 0) return endGame('caught');
+  selectFood(current + 1, 1); outOfFood();
+}
+
+// ---- 同桌打呼：掩护窗口 ----
+function updateSnore(dt) {
+  G.snore -= dt; G.nextSnore -= dt;
+  if (G.nextSnore <= 0) { G.snore = 4.5; G.nextSnore = rnd(26, 36); sfx('snore'); }
+}
+
+// ---- 结束 ----
+function endGame(kind) {
+  if (G.state !== 'play') return;
+  G.state = 'end'; G.holding = false; stopBgm();
+  if (kind !== 'caught') ringBell();
+  const win = kind === 'win';
+  const final = G.score + G.hearts * 15 + (win ? Math.round(G.time) * 2 : 0);
+  const title = !win ? (kind === 'caught' ? '被请去走廊罚站' : '没吃饱……') : final >= 480 ? '偷吃之王' : final >= 360 ? '干饭达人' : '偷吃新手';
+  // 结算：只给称号 + 几个关键数字
+  $('endTitle').textContent = title;
+  $('endSub').textContent = '';
+  const tiles = [['饱腹', `${G.full}/${GOAL}`], ['得分', final], ['组合', `${G.combos.size}/${COMBOS.length}`], ['剩余的心', '❤️'.repeat(G.hearts) || '—']];
+  $('endStats').innerHTML = tiles.map(([a, b]) => `<div><b>${b}</b><small>${a}</small></div>`).join('');
+  hideTip(); setTimeout(() => showCard('endCard'), win ? 900 : 1600);
+}
+let bellRing = 0;
+function ringBell() { bellRing = 2.2; say('叮铃铃——下课！', 2); sfx('bell'); }
+
+// ---- HUD ----
+const hud = { hearts: $('hearts'), fullFill: $('fullFill'), fullNum: $('fullNum'), noiseFill: $('noiseFill'), timer: $('timer'),
+  snore: $('snoreChip'), chip: $('teacherChip'), bubble: $('bubble'), zzz: $('zzz'), ring: $('ring'), ringFg: $('ringFg'), ringTxt: $('ringTxt'), vig: $('vignette') };
+const tmpV = new THREE.Vector3();
+function bubbleAt(el, obj, dy) {
+  obj.getWorldPosition(tmpV); tmpV.y += dy; tmpV.project(camera);
+  const on = tmpV.z < 1 && Math.abs(tmpV.x) < 1.1 && Math.abs(tmpV.y) < 1.1;
+  el.style.display = on ? 'block' : 'none';
+  if (on) { el.style.left = `${(tmpV.x + 1) / 2 * innerWidth}px`; el.style.top = `${(1 - tmpV.y) / 2 * innerHeight}px`; }
+}
+let comboSig = '';
+function updateHud() {
+  const sig = `${Object.values(G.stock).join('')}|${pending}|${G.ate.size}|${G.banned.size}|${G.combos.size}|${G.unlocked.size}`;
+  if (sig !== comboSig) { comboSig = sig; renderCombos(); }
+  hud.hearts.innerHTML = '❤️'.repeat(G.hearts) + '<i>' + '❤️'.repeat(HEARTS - G.hearts) + '</i>';
+  hud.fullFill.style.width = `${G.full / GOAL * 100}%`; hud.fullNum.textContent = G.full;
+  hud.noiseFill.style.width = `${G.noise * 100}%`;
+  const s = Math.max(0, Math.ceil(G.time));
+  hud.timer.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  hud.snore.style.display = G.snore > 0 ? 'block' : 'none';
+  const [cls, txt] = T.phase === 'angry' ? ['danger', '💢'] : T.phase === 'warn' ? ['warn', '⚠️ 要回头']
+    : teacherLooking() ? ['danger', '👀 别动'] : T.phase === 'fake' ? ['warn', '😰']
+    : T.phase === 'write' ? ['safe', '✍️ 快吃'] : T.phase === 'idle' ? ['safe', '🤔 快吃']
+    : T.phase === 'walkDanger' ? ['warn', '🚶 小心'] : T.phase === 'suspect' ? ['warn', '👂 起疑了'] : ['safe', '🚶 快吃']
+  hud.chip.className = `panel ${cls}`; hud.chip.textContent = txt;
+  hud.ring.style.display = G.eatT > .5 && G.state === 'play' ? 'block' : 'none';
+  hud.ringFg.style.strokeDashoffset = 264 * (1 - G.progress);
+  hud.ringTxt.textContent = G.eatT > .5 ? FOODS[current].name : '';
+  hud.vig.classList.toggle('eating', G.eatT > .5);
+  if (G.eatT > .5) {                                                    // 动静越大：黄 → 橙 → 红，越来越浓
+    const n = G.noise, c = n < .5 ? [255, 200 - n * 120, 60] : [255, 140 - (n - .5) * 220, 40];
+    hud.vig.style.setProperty('--vc', c.map(Math.round).join(','));
+    hud.vig.style.setProperty('--va', (.4 + n * .45).toFixed(2));
+  }
+}
+function updateBubbles() {
+  if (T.say > 0 && teacher) bubbleAt(hud.bubble, teacher, 1.95); else hud.bubble.style.display = 'none';
+  if (G.state === 'play' && G.snore > 0 && sleepy) bubbleAt(hud.zzz, sleepy, 1.05); else hud.zzz.style.display = 'none';
+}
+function floatText(txt) {
+  const el = document.createElement('div'); el.className = 'float'; el.textContent = txt;
+  document.body.appendChild(el); setTimeout(() => el.remove(), 1200);
+}
+let toastTimer = 0;
+function toast(txt) { const el = $('toast'); el.textContent = txt; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 1600); }
+function flash() { hud.vig.classList.add('flash'); requestAnimationFrame(() => requestAnimationFrame(() => hud.vig.classList.remove('flash'))); }
+
+// ---- 音效：全部来自 Uppbeat（uppbeat.io），文件在 web/audio/ ----
+// segs：文件里按静音切好的片段 [开始, 结束] 秒，每次随机挑一段播；没有 segs 就整段播
+let ac = null;
+const SND = {
+  crunch: { url: 'audio/crunch.mp3', segs: [[0, .2], [.41, .63]] },                 // Crisp crunch - crispy cartoon bite
+  slurp: { url: 'audio/slurp.mp3', segs: [[0, .93], [2.39, 2.99], [4.43, 5.26], [6.86, 7.67], [9.15, 9.92], [11.49, 12.14], [13.15, 14.37]] },  // Cartoon slurping
+  can_open: { url: 'audio/can_open.mp3' },                                        // Opening soda can
+  drink: { url: 'audio/drink.mp3', segs: [[0, .82], [1.03, 1.51], [1.73, 2.44]] },  // Gulping drink quickly
+  cough: { url: 'audio/cough.mp3' },                                              // Cough & throat clear (Male)
+  huh: { url: 'audio/huh.mp3' },                                                  // Hmm - curious male voice
+  caught: { url: 'audio/caught.mp3' },                                            // Trombone wa-wa-wa fail
+  snore: { url: 'audio/snore.mp3' },                                              // Cartoon snore - whistling (Male)
+  bell: { url: 'audio/bell.mp3' },                                                // School bell - class dismissed
+  bgm: { url: 'audio/bgm.mp3' },                                                  // BGM：The Incident - Soundroll（音乐）
+};
+// 每种食物吃的时候用哪个声音、音量多大（越吵的越大声）
+const EAT_SND = {
+  gummy_bears: ['crunch', .35], latiao: ['crunch', .65], chips: ['crunch', 1], burger: ['crunch', .55], fried_chicken: ['crunch', .7],
+  ice_cream_bar: ['slurp', .45], cup_noodles: ['slurp', .9], cola: ['drink', .9],
+};
+const SFX_VOL = { cough: 1, huh: 1, caught: .7, snore: .8, bell: .6, can_open: 1 };
+function loadSounds() {
+  for (const s of Object.values(SND)) {
+    if (s.buf || s.loading) continue;
+    s.loading = fetch(asset(s.url)).then((r) => r.arrayBuffer()).then((b) => ac.decodeAudioData(b)).then((b) => { s.buf = b; })
+      .catch((e) => { console.warn('音效加载失败', s.url, e); s.loading = null; });
+  }
+}
+function playSeg(name, vol, rate = 1) {                                  // 播一段，返回实际时长（秒）；没加载好返回 0
+  const s = SND[name]; if (!ac || !s?.buf) return 0;
+  const [a, b] = s.segs ? s.segs[Math.floor(Math.random() * s.segs.length)] : [0, s.buf.duration];
+  const dur = b - a, len = dur / rate, t0 = ac.currentTime;
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = s.buf; src.playbackRate.value = rate;
+  g.gain.setValueAtTime(vol, t0); g.gain.setValueAtTime(vol, t0 + Math.max(0, len - .03)); g.gain.linearRampToValueAtTime(0, t0 + len);
+  src.connect(g).connect(ac.destination); src.start(t0, a, dur + .02);
+  return len;
+}
+const sfx = (name) => playSeg(name, SFX_VOL[name] ?? 1);
+// ---- BGM：上课时循环播放，音量压低一点，让吃东西和老师的声音听得清；下课淡出 ----
+const BGM_VOL = .3;
+let bgmSrc = null, bgmGain = null;
+function startBgm() {
+  stopBgm(0);
+  const s = SND.bgm;
+  if (!s.buf) { s.loading?.then(() => { if (G.state === 'play' && !bgmSrc) startBgm(); }); return; }   // 还在加载：加载完再开始
+  const t = ac.currentTime;
+  bgmGain = ac.createGain(); bgmGain.gain.setValueAtTime(0, t); bgmGain.gain.linearRampToValueAtTime(BGM_VOL, t + 1);
+  bgmSrc = ac.createBufferSource(); bgmSrc.buffer = s.buf; bgmSrc.loop = true;
+  bgmSrc.connect(bgmGain).connect(ac.destination); bgmSrc.start(t);
+}
+function stopBgm(fade = 1.5) {
+  if (!bgmSrc) return;
+  const t = ac.currentTime, g = bgmGain.gain;
+  g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + fade);
+  bgmSrc.stop(t + fade + .05); bgmSrc = null;
+}
+let chewClock = 0;
+function chewSfx(dt) {                                                  // 嘴里在吃的时候一口一口出声
+  if (!ac || G.eatT < 1 || !G.holding) { chewClock = 0; return; }      // 一放下就重置，下次一举到嘴边立刻出声
+  chewClock -= dt; if (chewClock > 0) return;
+  const f = FOODS[current];
+  if (f.id === 'cola' && !G.canOpen) {                                 // 拉环"呲"一声：老师立刻警觉回头（打呼也盖不住）
+    G.canOpen = true; chewClock = sfx('can_open') + .1;
+    const busy = ['angry', 'watch', 'warn', 'suspect'].includes(T.phase) || teacherLooking() || inPractice();
+    if (!busy) {
+      say('嗯？！', 1.2); sfx('huh'); T.heard = true;
+      doNext([{ wait: .35, clip: 'lookAround', phase: 'suspect' }, { turn: 'seat', speed: 9 }, { wait: rnd(1.8, 2.6), clip: 'alert', phase: 'watch' }]);
+    }
+    return;
+  }   // 可乐第一口先"呲"地开罐
+  const [name, vol] = EAT_SND[f.id] || ['crunch', .5];
+  const len = playSeg(name, vol, rnd(.92, 1.1));
+  chewClock = len ? len + (name === 'crunch' ? rnd(.12, .22) : rnd(.08, .2)) : .2;
+}
+
+// ---- 输入 ----
+// 被抓后要先松开一次才能再吃（防止按住不放 + 键盘连发被连抓两次）
+const setHold = (v) => {
+  if (!v) G.needRelease = false;
+  G.holding = v && G.state === 'play' && !G.needRelease;
+  $('eatBtn').classList.toggle('down', G.holding);
+};
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); setHold(true); } });
+addEventListener('keyup', (e) => { if (e.code === 'Space') setHold(false); });
+addEventListener('blur', () => setHold(false));
+const eatBtn = $('eatBtn');
+eatBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); eatBtn.setPointerCapture(e.pointerId); setHold(true); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => eatBtn.addEventListener(ev, () => setHold(false)));
+const startGame = () => { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); loadSounds(); resetGame(); startBgm(); };
+$('startBtn').addEventListener('click', startGame);
+// ---- 菜单卡片：开始 / 规则 / 暂停 / 结束，同一时间只显示一张 ----
+const showCard = (id) => {
+  ['startCard', 'rulesCard', 'pauseCard', 'endCard'].forEach((c) => { $(c).hidden = c !== id; });
+  $('overlay').hidden = false; document.body.classList.add('menu');
+};
+let rulesFrom = 'startCard';
+const openRules = (from) => { rulesFrom = from; showCard('rulesCard'); };
+$('rulesBtn').addEventListener('click', () => openRules('startCard'));
+$('pauseRulesBtn').addEventListener('click', () => openRules('pauseCard'));
+$('rulesBack').addEventListener('click', () => showCard(rulesFrom));
+document.querySelectorAll('#rulesCard .tab').forEach((t) => t.addEventListener('click', () => {
+  document.querySelectorAll('#rulesCard .tab').forEach((x) => x.classList.toggle('on', x === t));
+  document.querySelectorAll('#rulesCard .page').forEach((pg) => { pg.hidden = pg.id !== `page-${t.dataset.page}`; });
+}));
+// ---- 暂停：时间、老师、动画、声音全部停住 ----
+function pauseGame() {
+  if (G.state !== 'play') return;
+  setHold(false); G.state = 'pause'; hideTip();
+  ac?.suspend(); showCard('pauseCard');
+}
+function resumeGame() {
+  if (G.state !== 'pause') return;
+  G.state = 'play'; $('overlay').hidden = true; document.body.classList.remove('menu');
+  ac?.resume(); window.__lastT = undefined;
+}
+$('pauseBtn').addEventListener('click', pauseGame);
+$('resumeBtn').addEventListener('click', resumeGame);
+$('restartBtn').addEventListener('click', () => { ac?.resume(); startGame(); });
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Escape' && e.code !== 'KeyP') return;
+  if (G.state === 'play') pauseGame();
+  else if (G.state === 'pause' && !$('pauseCard').hidden) resumeGame();
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });   // 切走标签页自动暂停
+$('tipsBtn').addEventListener('click', () => setTipsOn(!tipsOn));
+$('againBtn').addEventListener('click', startGame);
+
+// ---------- 新手提示：第一次遇到某件事时弹一句，箭头指向相关界面；每条只出现一次（记在本机） ----------
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+let tipsOn = store.get('tc_tips_on') !== '0';
+let seenTips = new Set((() => { try { return JSON.parse(store.get('tc_tips_seen') || '[]'); } catch { return []; } })());
+const tipEl = $('tip'), tipQueue = [];
+let curTip = null;
+function setTipsOn(on) {
+  tipsOn = on; store.set('tc_tips_on', on ? '1' : '0');
+  if (on) { seenTips.clear(); store.set('tc_tips_seen', '[]'); }       // 重新打开：所有提示再来一遍
+  $('tipsBtn').textContent = `新手提示：${on ? '开' : '关'}`;
+  if (!on) hideTip();
+}
+setTipsOn(tipsOn);
+// target：要指向的元素；until：满足就提前收起；dur：最多显示几秒
+function tip(id, html, target, opts = {}) {
+  if (!tipsOn || seenTips.has(id) || (curTip && curTip.id === id) || tipQueue.some((q) => q.id === id)) return;
+  const t = { id, html, target, until: opts.until, dur: opts.dur ?? 5, side: opts.side };
+  if (curTip) tipQueue.push(t); else showTip(t);
+}
+function showTip(t) {
+  curTip = { ...t, age: 0 }; seenTips.add(t.id); store.set('tc_tips_seen', JSON.stringify([...seenTips]));
+  tipEl.firstChild.innerHTML = t.html; tipEl.classList.add('show'); placeTip();
+}
+function hideTip() { curTip = null; tipEl.classList.remove('show'); }
+function placeTip() {
+  if (!curTip) return;
+  const r = (typeof curTip.target === 'function' ? curTip.target() : curTip.target)?.getBoundingClientRect();
+  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  let x, y, cls;
+  if (!r) { x = (innerWidth - w) / 2; y = innerHeight * .28; cls = ''; }
+  else if (curTip.side === 'right') { x = r.right + 14; y = Math.max(10, r.top + Math.min(r.height / 2, 60) - h / 2); cls = 'left'; }
+  else if (r.top > h + 30) { x = r.left + r.width / 2 - w / 2; y = r.top - h - 14; cls = 'down'; }
+  else { x = r.left + r.width / 2 - w / 2; y = r.bottom + 14; cls = 'up'; }
+  const cx = Math.min(Math.max(10, x), innerWidth - w - 10);
+  tipEl.className = `show ${cls}`;
+  if (r) { tipEl.style.setProperty('--ax', `${Math.min(Math.max(16, r.left + r.width / 2 - cx), w - 16)}px`); tipEl.style.setProperty('--ay', `${Math.min(Math.max(14, r.top + Math.min(r.height / 2, 60) - y), h - 14)}px`); }
+  tipEl.style.left = `${cx}px`; tipEl.style.top = `${y}px`;
+}
+function updateTips(dt) {
+  if (curTip) {
+    curTip.age += dt; placeTip();
+    if (curTip.age > curTip.dur || (curTip.age > 1.2 && curTip.until?.())) { hideTip(); }
+  }
+  if (!curTip && tipQueue.length) showTip(tipQueue.shift());
+  if (G.state !== 'play') return;
+  // 什么时候提示什么
+  if (T.phase === 'write' && G.eaten === 0 && G.eatT < .5) tip('eat', '老师背对你了！<br>按住 <kbd>空格</kbd> 偷吃', $('eatBtn'), { until: () => G.eatT > .9, dur: 30 });
+  if (T.phase === 'warn') tip('cough', '"咳咳"——老师要回头了！<br><b>马上松开空格</b>', $('teacherChip'), { until: () => !G.holding && T.phase !== 'warn', dur: 3.5 });
+  if (G.noise > .45) tip('noise', '吃得太响了，屏幕边框发红。<br><b>停一下</b>，等声音小下去', $('noiseFill').parentElement, { until: () => G.noise < .25, dur: 5 });
+  if (G.eaten >= 1) tip('combo', '左上角：把一组零食<b>都吃一遍</b>，<br>就能解锁更顶饱的零食 🔓', comboEl, { side: 'right', dur: 6 });
+  if (G.snore > 0) tip('snore', '💤 同桌在打呼噜，<br>现在吃<b>不会有动静</b>', $('timerBox'), { dur: 4 });
+  if (G.unlocked.size > 3) tip('unlock', '新零食解锁了！<br>更顶饱，在底部点它或按 <kbd>←</kbd> <kbd>→</kbd> 换', () => hotbar.children[3], { dur: 5 });
+  if (current >= 0 && G.stock[FOODS[current].id] <= 2 && G.ate.size) tip('stock', '每样零食<b>数量有限</b>，<br>格子右下角是还剩几份', () => hotbar.children[current], { dur: 5 });
+}
+
+function updateGame(dt, t) {
+  if (G.state === 'play') {
+    G.time -= dt;
+    if (G.time <= 0) { G.time = 0; endGame(G.full >= GOAL ? 'win' : 'hungry'); }
+    updateTeacher(dt); updateEating(dt); updateSnore(dt); updateBans(dt); chewSfx(dt);
+  } else { G.eatT = Math.max(0, G.eatT - dt / .12); }
+  updateTips(dt);
+  T.say -= dt;
+  if (bell && bellRing > 0) { bellRing -= dt; bell.rotation.z = Math.sin(t * .09) * .06 * Math.min(1, bellRing); }
+  if (G.state !== 'menu') updateHud();
+  updateBubbles();
+}
+window.__game = { G, T, step: (dt) => { mixers.forEach((m) => m.update(dt)); updateHand(performance.now() + 1e4); updateGame(dt, performance.now()); }, setHold };   // 调试用：手动推进时间
+
+// ---------- 启动 ----------
+await Promise.all([...Object.keys(SPECS).map(loadTemplate), ...Object.keys(CHARS).map(loadChar)]);
+const clock = layout();
+teacher = seatStudents();
+window.__chars = { charTpl, teacher, templates, desks, chairs };
+toSeat();
+selectFood(0);
+const loadingEl = document.getElementById('loading');
+loadingEl.style.opacity = 0; setTimeout(() => loadingEl.remove(), 700);
+window.__ready = true;
+
+const clockHand = new THREE.Mesh(new THREE.BoxGeometry(.012, .13, .006), std({ color: 0x222222 }));
+clockHand.geometry.translate(0, .06, 0);
+clockHand.position.set(3.3, 2.5 + templates.wall_clock.userData.size.y / 2, -HD + .02 + templates.wall_clock.userData.size.z + .005);
+scene.add(clockHand);
+
+renderer.setAnimationLoop((t) => {
+  if (mode === 'seat') { camera.position.copy(seat); camera.rotation.set(pitch, yaw, 0); }
+  else orbit.update();
+  clockHand.rotation.z = -t / 1000 * (Math.PI * 2 / 60);
+  updateHand(t);
+  const dt = Math.min((t - (window.__lastT || t)) / 1000, .1); window.__lastT = t;
+  if (G.state !== 'pause') { mixers.forEach((m) => m.update(dt)); updateGame(dt, t); }
+  camera.updateMatrixWorld();          // 相机挂在 handScene 下，主场景渲染前手动更新一次
+  composer.render();
+});
+
+  </script>
+</body>
+</html>
