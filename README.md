@@ -1,6 +1,8 @@
 # 偷吃大赛
 
-**在线试玩：https://sisheng6.github.io/touchi-dasai/**
+**在线试玩（电脑）：https://sisheng6.github.io/touchi-dasai/**
+
+**手机竖屏版：https://sisheng6.github.io/touchi-dasai/mobile/**（用手机浏览器打开；模型是 Meshy 智能拓扑专门生成的低面数版本）
 
 一款第一人称 3D 网页小游戏：在动漫风的教室里，趁老师不注意偷吃零食。下课前把饱腹吃到 100 就算赢。
 

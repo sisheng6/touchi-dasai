@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>偷吃大赛</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1a1612; overflow: hidden; font-family: -apple-system, "PingFang SC", sans-serif; }
+    canvas { display: block; touch-action: none; }
+    body { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #f3e6d0; background: #1a1612; font-size: 15px; letter-spacing: .05em; transition: opacity .6s; }
+    #hint { position: fixed; left: 16px; top: 14px; color: #f3e6d0; font-size: 12px; background: rgba(20,16,12,.55); padding: 6px 10px; border-radius: 6px; pointer-events: none; }
+
+    /* 食物选择栏：底部居中的快捷栏，1–8 / 滚轮 / 点击切换 */
+    :root { --s: min(68px, calc((100vw - 100px) / 8)); --gold: #ffc94d; --paper: #f6ecd9; --ink: #3a2a1c; }
+    #hotbar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px;
+      padding: 10px 12px 12px; background: rgba(28,21,15,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,236,205,.18); border-radius: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.35); user-select: none; }
+    .slot { position: relative; width: var(--s); height: var(--s); padding: 0; border: 2px solid rgba(255,255,255,.0); border-radius: 12px;
+      background: linear-gradient(#f8efde, #e8d6b7); cursor: pointer; display: grid; place-items: center;
+      box-shadow: inset 0 -3px 0 rgba(120,85,50,.25); transition: transform .16s cubic-bezier(.3,1.6,.5,1), box-shadow .16s, border-color .16s; }
+    .slot:hover { transform: translateY(-3px); }
+    .slot img { width: 86%; height: 86%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(60,35,15,.3)); pointer-events: none; }
+    .slot .cnt { position: absolute; right: 5px; bottom: 3px; z-index: 3; font: 800 12px/1 -apple-system, sans-serif; color: #7a5532; }
+    .slot.empty { cursor: not-allowed; }
+    .slot.empty img { filter: grayscale(1); opacity: .3; }
+    .slot.empty::after { content: "空"; position: absolute; inset: 0; display: grid; place-items: center; font: 800 calc(var(--s) * .3)/1 -apple-system, "PingFang SC", sans-serif; color: #7a5532; }
+    .slot .key { position: absolute; left: 6px; top: 4px; font: 700 11px/1 -apple-system, sans-serif; color: #9a7650; }
+    .slot.active { transform: translateY(-9px) scale(1.07); border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(255,201,77,.35), 0 8px 16px rgba(0,0,0,.35), inset 0 -3px 0 rgba(120,85,50,.25); }
+    .slot.active .key { color: #c2861b; }
+    #foodinfo { position: fixed; left: 50%; bottom: calc(var(--s) + 46px); transform: translateX(-50%); display: flex; align-items: baseline; gap: 12px;
+      flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); box-sizing: border-box;
+      background: var(--paper); color: var(--ink); padding: 10px 18px; border-radius: 12px; font-size: 14px; white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(0,0,0,.3); pointer-events: none; }
+    #foodinfo b { font-size: 20px; }
+    #foodinfo span { color: #4f3620; letter-spacing: .02em; font-weight: 700; }
+    #foodinfo i { font-style: normal; color: #d9c7a8; }
+    #foodinfo em { font-style: normal; color: #6b4f33; }
+    #foodinfo.pop { animation: pop .28s cubic-bezier(.3,1.6,.5,1); }
+    @keyframes pop { from { transform: translateX(-50%) translateY(6px) scale(.94); opacity: .3; } }
+    #foodinfo:empty { display: none; }
+    body.overview #hotbar, body.overview #foodinfo { display: none; }
+
+    /* ---------- 游戏 HUD ---------- */
+    .panel { background: rgba(28,21,15,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,236,205,.18); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.35); color: #f3e6d0; }
+    #hud { position: fixed; left: 16px; top: 14px; padding: 12px 14px; width: min(340px, calc(100vw - 150px)); box-sizing: border-box; font-size: 13px; pointer-events: none; background: rgba(28,21,15,.84); }
+    #hearts { font-size: 18px; letter-spacing: 2px; margin-bottom: 6px; }
+    #hearts i { font-style: normal; opacity: .25; filter: grayscale(1); }
+    .bar { display: grid; grid-template-columns: 30px 1fr 28px; align-items: center; gap: 8px; margin-top: 5px; }
+    .bar label { color: #d9c4a3; }
+    .track { height: 10px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
+    .track div { height: 100%; width: 0; border-radius: 6px; transition: width .15s; }
+    #fullFill { background: linear-gradient(90deg, #f0b94a, #ffd86b); }
+    #noiseFill { background: linear-gradient(90deg, #7fb069, #f0b94a 55%, #e0503f); }
+    #fullNum { text-align: right; font-weight: 700; color: #ffd86b; }
+    .comboHead { margin: 10px 0 6px; padding-top: 10px; border-top: 1px solid rgba(255,236,205,.2); color: #fff3dc; font-size: 16px; font-weight: 800; }
+    .comboHead small { font-size: 12px; font-weight: 500; color: #e6d3b3; margin-left: 6px; }
+    .combo { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding: 3px 6px; border-radius: 9px; border: 1.5px solid transparent; transition: opacity .2s, background .2s, border-color .2s; }
+    .combo b { flex: 1; font-size: 15px; font-weight: 800; color: #fff3dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .combo img { width: 40px; height: 40px; border-radius: 9px; background: rgba(255,248,234,.9); object-fit: contain; opacity: .8; filter: saturate(.75); transition: opacity .2s, filter .2s, transform .2s; }
+    .combo img.got { opacity: 1; filter: none; background: #ffe7a3; box-shadow: 0 0 0 2px #ffd86b; }
+    .combo .ci.got::after { content: "✓"; position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 50%; background: #3f9d4a; color: #fff; font: 900 11px/16px -apple-system, sans-serif; text-align: center; }
+    .combo img.lost { opacity: .5; box-shadow: inset 0 0 0 2px #e0503f; }
+    .combo .ci { position: relative; display: inline-flex; }
+    .combo .imgs { display: contents; }
+    .combo .ci.ban::after { content: ""; position: absolute; inset: 0; border-radius: 8px;
+      background: conic-gradient(rgba(25,15,10,.78) calc(var(--cd, 1) * 360deg), rgba(25,15,10,0) 0); }
+    .combo img.now:not(.got) { opacity: .9; filter: none; box-shadow: 0 0 0 2px #ffd86b; transform: scale(1.06); }
+    .combo em { font-style: normal; color: #ffd86b; width: 44px; text-align: right; font-size: 15px; font-weight: 800; }
+    .combo.cur { background: rgba(255,216,107,.16); border-color: rgba(255,216,107,.55); }
+    .combo.done b { color: #ffd86b; }
+    .combo.done em::after { content: " ✓"; }
+    .combo.failed { opacity: .4; }
+    .combo.failed b { text-decoration: line-through; }
+    #timerBox { position: fixed; right: 16px; top: 14px; padding: 8px 14px; text-align: right; pointer-events: none; }
+    #timer { font: 700 24px/1 "SF Mono", ui-monospace, monospace; color: #ffe7b3; }
+    #timerBox small { display: block; font-size: 11px; color: #d9c4a3; margin-bottom: 4px; }
+    #snoreChip { margin-top: 4px; font-size: 18px; text-align: center; display: none; }
+    #teacherChip { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); padding: 7px 16px; font-size: 14px; font-weight: 700; pointer-events: none; transition: background .2s; white-space: nowrap; }
+    #teacherChip.safe { background: rgba(58,110,60,.82); }
+    #teacherChip.warn { background: rgba(196,140,30,.9); animation: shake .25s infinite; }
+    #teacherChip.danger { background: rgba(190,50,40,.9); }
+    @keyframes shake { 50% { transform: translateX(-50%) rotate(-2deg); } }
+    .bubble { position: fixed; transform: translate(-50%, -100%); background: #fffaf0; color: #3a2a1c; padding: 6px 12px; border-radius: 12px;
+      font-size: 14px; font-weight: 700; white-space: nowrap; pointer-events: none; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+    .bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: #fffaf0; }
+    #zzz { background: #e8f3ff; color: #2f5d8a; }
+    #zzz::after { border-top-color: #e8f3ff; }
+    #ring { position: fixed; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px; pointer-events: none; display: none; }
+    #ring circle { fill: none; stroke-width: 9; }
+    #ring .bg { stroke: rgba(255,255,255,.25); }
+    #ring .fg { stroke: #ffd86b; stroke-linecap: round; stroke-dasharray: 264; transform: rotate(-90deg); transform-origin: 50% 50%; }
+    #ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px #000; }
+    .float { position: fixed; left: 50%; top: 42%; transform: translate(-50%, 0); font-size: 22px; font-weight: 800; color: #ffd86b;
+      text-shadow: 0 2px 6px rgba(0,0,0,.6); pointer-events: none; animation: floatUp 1.1s ease-out forwards; white-space: nowrap; }
+    @keyframes floatUp { to { transform: translate(-50%, -70px); opacity: 0; } }
+    #toast { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%) scale(.9); font-size: 30px; font-weight: 900; color: #fff;
+      text-shadow: 0 3px 10px rgba(0,0,0,.6); pointer-events: none; opacity: 0; transition: opacity .2s, transform .2s; white-space: nowrap; }
+    #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    #vignette { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 160px 40px rgba(200,30,20,0); transition: box-shadow .5s; }
+    #vignette.flash { box-shadow: inset 0 0 160px 40px rgba(200,30,20,.75); transition: none; }
+    /* 吃东西时的边框：越吵越红、越亮，一直在呼吸闪 */
+    #vignette.eating { box-shadow: inset 0 0 0 7px rgba(var(--vc, 255,190,60), .85), inset 0 0 150px 55px rgba(var(--vc, 255,190,60), var(--va, .45));
+      transition: none; animation: eatPulse .7s ease-in-out infinite; }
+    @keyframes eatPulse { 50% { opacity: .55; } }
+    #eatBtn { position: fixed; right: 18px; bottom: 18px; width: 128px; height: 128px; border-radius: 50%; border: 4px solid #ffd86b;
+      background: radial-gradient(circle at 40% 35%, #ffe08a, #f0a43c); color: #5a3210; font: 900 20px/1.2 -apple-system, "PingFang SC", sans-serif;
+      box-shadow: 0 8px 20px rgba(0,0,0,.4), inset 0 -4px 0 rgba(150,80,20,.35); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+    #eatBtn small { display: block; padding: 4px 14px; border-radius: 8px; background: #fff8e6; color: #5a3210; font: 900 16px/1 -apple-system, "PingFang SC", sans-serif;
+      box-shadow: 0 3px 0 #c98a3a; letter-spacing: .1em; }
+    #eatBtn.down { transform: scale(.94); background: radial-gradient(circle at 40% 35%, #ffd86b, #e89a35); }
+    .slot.banned { cursor: not-allowed; }
+    .slot.banned img { filter: grayscale(.7); }
+    .slot.locked { cursor: not-allowed; }
+    .slot.locked img { filter: grayscale(1) brightness(.55); opacity: .5; }
+    .slot.locked::before { content: "🔒"; position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--s) * .38); z-index: 1; }
+    .slot.unlock { animation: unlockPop .9s cubic-bezier(.3,1.6,.5,1); }
+    @keyframes unlockPop { 0% { transform: scale(.6); box-shadow: 0 0 0 0 rgba(255,216,107,.9); } 50% { transform: scale(1.25); box-shadow: 0 0 0 10px rgba(255,216,107,.4); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,216,107,0); } }
+    .combo b small { display: block; font-size: 12px; font-weight: 700; color: #a9dcff; margin-top: 1px; }
+    .combo.done b small { color: #ffd86b; }
+    .combo.far { opacity: .8; }
+    .combo img.locked { filter: grayscale(.6) brightness(.75); opacity: .7; }
+    /* 没收 = 技能冷却：暗色扇形顺时针退掉，慢慢变亮，转完自动恢复 */
+    .slot.banned::after { content: ""; position: absolute; inset: 0; border-radius: 10px; z-index: 2; pointer-events: none;
+      background: conic-gradient(rgba(25,15,10,.78) calc(var(--cd, 1) * 360deg), rgba(25,15,10,0) 0); }
+    body.menu #hud, body.menu #timerBox, body.menu #teacherChip, body.menu #eatBtn, body.menu #ring,
+    body.overview #eatBtn, body.overview #ring { display: none; }
+    @media (max-width: 720px) { .combo img { width: 30px; height: 30px; } .combo b { font-size: 12px; } #eatBtn { bottom: calc(var(--s) + 70px); width: 96px; height: 96px; font-size: 15px; } #eatBtn small { font-size: 12px; padding: 3px 10px; } #teacherChip { top: auto; bottom: calc(var(--s) + 92px); font-size: 12px; } }
+
+    /* 开始 / 结算 */
+    #overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20,15,10,.55); backdrop-filter: blur(3px); padding: 16px; box-sizing: border-box; }
+    #overlay[hidden] { display: none; }
+    .card { background: #f7efdf; color: #3a2a1c; border-radius: 18px; padding: 26px 28px; width: min(440px, 100%); box-sizing: border-box;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5); max-height: calc(100vh - 32px); overflow: auto; }
+    .card h1 { margin: 0 0 4px; font-size: 34px; letter-spacing: .05em; }
+    .card .sub { margin: 0 0 14px; color: #8a6b48; }
+    .card ul { margin: 0 0 12px; padding-left: 20px; line-height: 1.75; font-size: 14px; }
+    .card b { color: #b5562a; }
+    .card .keys { font-size: 12px; color: #8a6b48; margin: 0 0 16px; }
+    .card button { width: 100%; padding: 13px; border: 0; border-radius: 12px; background: #d9822b; color: #fff; font: 800 17px -apple-system, "PingFang SC", sans-serif; cursor: pointer; box-shadow: 0 4px 0 #a35f1c; }
+    /* 开始页 / 暂停：次要按钮 */
+    .card button.ghost { margin-top: 10px; background: transparent; color: #8a5a2b; box-shadow: inset 0 0 0 2px #e2cba6; font-size: 15px; padding: 11px; }
+    .card button.ghost:active { transform: translateY(1px); box-shadow: inset 0 0 0 2px #d4b384; }
+    #pauseCard h1, #startCard h1 { text-align: center; }
+    #startCard .sub { text-align: center; margin-bottom: 18px; }
+    #rulesCard .tabs { margin-top: 0; }
+    #rulesBack { margin-top: 4px; }
+    .trow { display: flex; align-items: center; gap: 10px; }
+    #pauseBtn { pointer-events: auto; width: 30px; height: 30px; border: 0; border-radius: 8px; background: rgba(255,236,205,.18); color: #ffe7b3; font-size: 14px; cursor: pointer; }
+    #pauseBtn:hover { background: rgba(255,236,205,.3); }
+    /* 新手提示气泡：指向相关的界面 */
+    #tip { position: fixed; z-index: 30; max-width: 280px; padding: 10px 14px; border-radius: 12px; background: #fff6df; color: #3a2a1c;
+      font: 700 15px/1.45 -apple-system, "PingFang SC", sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 3px #ffc94d;
+      pointer-events: none; opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
+    #tip.show { opacity: 1; transform: none; animation: tipBob 1.2s ease-in-out .3s infinite; }
+    @keyframes tipBob { 50% { transform: translateY(-3px); } }
+    #tip b { color: #c2561b; }
+    #tip::after { content: ""; position: absolute; width: 14px; height: 14px; background: #fff6df; transform: rotate(45deg); box-shadow: 3px 3px 0 0 #ffc94d; }
+    #tip.down::after { left: var(--ax, 50%); bottom: -7px; margin-left: -7px; }
+    #tip.up::after { left: var(--ax, 50%); top: -7px; margin-left: -7px; box-shadow: -3px -3px 0 0 #ffc94d; }
+    #tip.left::after { top: var(--ay, 50%); left: -7px; margin-top: -7px; box-shadow: -3px 3px 0 0 #ffc94d; }
+    body.menu #tip { display: none; }
+    #tip { font-size: 17px; max-width: 320px; }
+    #tip kbd { font-size: 16px; padding: 4px 12px; margin: 0 2px; box-shadow: 0 3px 0 #d9c7a8; }
+    .tabs { display: flex; gap: 6px; margin: 2px 0 12px; background: #eadcc2; padding: 4px; border-radius: 12px; }
+    .card .tabs .tab { flex: 1; width: auto; padding: 8px; border-radius: 9px; background: transparent; color: #8a6b48; box-shadow: none; font-size: 15px; }
+    .card .tabs .tab.on { background: #fff8ea; color: #3a2a1c; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .card ol { margin: 0 0 10px; padding-left: 22px; line-height: 1.65; font-size: 14px; }
+    .card ol li { margin-bottom: 4px; }
+    .card ol li b { color: #3a2a1c; margin-right: 4px; }
+    .card .goal { margin: 10px 0 16px; padding: 10px 12px; border-radius: 12px; background: #fde7c6; color: #8a4513; font-weight: 800; font-size: 16px; text-align: center; }
+    .keytable { width: 100%; border-collapse: collapse; font-size: 14px; margin: 4px 0 16px; }
+    .keytable td { padding: 9px 4px; border-bottom: 1px solid #eadcc2; vertical-align: middle; }
+    .keytable td:first-child { white-space: nowrap; padding-right: 12px; }
+    kbd { display: inline-block; min-width: 18px; padding: 2px 6px; border-radius: 6px; background: #fff; border: 1px solid #d9c7a8; box-shadow: 0 2px 0 #d9c7a8; font: 700 12px -apple-system, sans-serif; text-align: center; }
+    .card button:active { transform: translateY(2px); box-shadow: 0 2px 0 #a35f1c; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 20px; }
+    .stats div { background: rgba(120,85,50,.08); border-radius: 12px; padding: 10px 4px; text-align: center; }
+    .stats b { display: block; font-size: 20px; font-weight: 800; white-space: nowrap; }
+    .stats small { display: block; margin-top: 2px; font-size: 12px; color: #8a6b48; }
+    .card .sub:empty { display: none; }
+    #endCard h1 { text-align: center; }
+    /* 手机：不提键盘 */
+    body:not(.touch) .touch-only, body.touch .pc-only { display: none; }
+    body.touch #eatBtn small { display: none; }
+
+    /* ---------- 竖屏（手机 / 小红书小工具，9:16）---------- */
+    @media (orientation: portrait) {
+      :root { --s: calc((100vw - 20px - 16px - 35px) / 8); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px); }
+      #hotbar { left: 10px; right: 10px; transform: none; bottom: calc(8px + var(--sb)); gap: 5px; padding: 8px; justify-content: space-between; border-radius: 14px; }
+      .slot { border-radius: 9px; }
+      .slot:hover { transform: none; }
+      .slot.active { transform: translateY(-5px) scale(1.06); }
+      .slot .cnt { font-size: 10px; right: 3px; bottom: 2px; }
+      /* 顶部面板：第一行 心 + 时间；第二行 左边饱腹/动静（短条），右边是手里零食所在的组合 */
+      #hud { left: 8px; right: 8px; top: calc(8px + var(--st)); width: auto; padding: 8px 10px; font-size: 12px;
+        display: grid; grid-template-columns: 118px 1fr; column-gap: 6px; align-items: center; }
+      #hearts { grid-column: 1 / -1; font-size: 16px; height: 26px; line-height: 26px; margin-bottom: 2px; }
+      .bar { grid-column: 1; margin-top: 2px; grid-template-columns: 26px 1fr 20px; gap: 5px; }
+      .bar label { font-size: 12px; }
+      .comboHead { display: none; }
+      #combos { grid-column: 2; grid-row: 2 / span 2; display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 4px;
+        margin: 0; padding: 0 0 0 6px; min-width: 0; border-left: 1px solid rgba(255,236,205,.2); min-height: 52px; }
+      .combo:not(.cur) { display: none; }          /* 只显示手里这样零食所在的组合（最多 3 个） */
+      .combo { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0; padding: 3px 5px 4px; border-radius: 8px; flex: none; }
+      .combo.cur { background: rgba(255,216,107,.1); border-color: rgba(255,216,107,.4); }
+      .combo b { flex: none; font-size: 10px; letter-spacing: -.03em; overflow: visible; padding-right: 2px; }
+      .combo b small { display: inline; font-size: 9px; margin-left: 1px; }
+      .combo b small .ul { display: none; }
+      .combo em { position: absolute; right: -4px; top: -7px; width: auto; padding: 1px 4px; border-radius: 6px; background: #ffd86b; color: #4a2c10; font-size: 9.5px; line-height: 1.2; }
+      .combo.done em::after { content: ""; }
+      .combo .imgs { display: flex; gap: 2px; }
+      .combo img { width: 20px; height: 20px; border-radius: 5px; }
+      .combo .ci.got::after { width: 12px; height: 12px; font-size: 8px; line-height: 12px; right: -3px; bottom: -3px; }
+      #timerBox { top: calc(14px + var(--st)); right: 16px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+        display: flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
+      #timer { font-size: 20px; }
+      #snoreChip { margin: 0; font-size: 16px; }
+      #pauseBtn { width: 32px; height: 32px; font-size: 15px; }
+      #eatBtn { right: 10px; bottom: calc(var(--s) + 34px + var(--sb)); width: 100px; height: 100px; font-size: 17px; }
+      #foodinfo { left: 10px; right: 120px; transform: none; bottom: calc(var(--s) + 34px + var(--sb)); max-width: none; white-space: normal;
+        justify-content: flex-start; gap: 2px 10px; padding: 8px 12px; font-size: 12px; }
+      #foodinfo b { font-size: 16px; }
+      #foodinfo.pop { animation-name: popL; }
+      @keyframes popL { from { transform: translateY(6px) scale(.94); opacity: .3; } }
+      #teacherChip { top: auto; bottom: calc(var(--s) + 146px + var(--sb)); font-size: 13px; padding: 6px 14px; }
+      #toast { top: 50%; font-size: 24px; }
+      .float { top: 50%; font-size: 20px; }
+      #tip { max-width: calc(100vw - 24px); font-size: 15px; }
+      #tip kbd { font-size: 14px; }
+      .card { padding: 22px 18px; }
+      .card h1 { font-size: 28px; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+    .badge { display: inline-block; margin-top: 6px; padding: 5px 12px; border-radius: 999px; background: #3a2a1c; color: #ffd86b; font-weight: 800; }
+  </style>
+</head>
+<body class="menu">
+  <div id="loading">正在搬桌子… <span id="progress">0%</span></div>
+  <div id="vignette"></div>
+  <div id="hud" class="panel">
+    <div id="hearts"></div>
+    <div class="bar"><label>饱腹</label><div class="track"><div id="fullFill"></div></div><span id="fullNum">0</span></div>
+    <div class="bar"><label>动静</label><div class="track"><div id="noiseFill"></div></div><span></span></div>
+    <div id="combos"></div>
+  </div>
+  <div id="timerBox" class="panel"><div class="trow"><div id="timer">03:00</div><button id="pauseBtn" title="暂停（Esc / P）">⏸</button></div><div id="snoreChip">💤</div></div>
+  <div id="tip"><span></span></div>
+  <div id="teacherChip" class="panel"></div>
+  <div id="bubble" class="bubble"></div>
+  <div id="zzz" class="bubble">Zzz…</div>
+  <div id="ring"><svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="42"/><circle id="ringFg" class="fg" cx="50" cy="50" r="42"/></svg><span id="ringTxt"></span></div>
+  <div id="toast"></div>
+  <button id="eatBtn">按住偷吃<small>空格</small></button>
+  <div id="foodinfo"></div>
+  <div id="hotbar"></div>
+  <div id="overlay">
+    <div class="card" id="startCard">
+      <h1>偷吃大赛</h1>
+      <p class="sub">饿了一下午。趁老师不注意，下课前把饱腹吃到 <span id="goalTxt">100</span>！</p>
+      <button id="startBtn">开始上课</button>
+      <button class="ghost" id="rulesBtn">📖 规则和操作</button>
+    </div>
+    <div class="card" id="rulesCard" hidden>
+      <div class="tabs"><button class="tab on" data-page="rules">规则</button><button class="tab" data-page="keys">操作</button></div>
+      <div class="page" id="page-rules">
+        <ol>
+          <li><b>老师背对你时，偷偷吃。</b>老师在写黑板、或侧身走来走去时，最安全。</li>
+          <li><b>听到"咳咳"，马上停。</b>老师一咳嗽，就是要转过来看了。</li>
+          <li><b>别吃得太响。</b>屏幕四周的光圈越红，说明声音越大；太响了老师会回头找人。</li>
+          <li><b>被抓到扣一颗心。</b>手里的零食会被没收，要等一会儿才能再吃。3 颗心都没了，游戏结束。</li>
+          <li><b>同桌打呼噜时，可以放心吃。</b></li>
+          <li><b>零食要一步步解锁。</b>一开始只有小零食。把左上角一个组合里的零食都吃一遍，就能解锁更顶饱的零食。</li>
+          <li><b>每样零食数量有限，吃完就没了。</b></li>
+        </ol>
+        <p class="goal">🎯 3 分钟内，把饱腹吃到 100 就赢了！</p>
+      </div>
+      <div class="page" id="page-keys" hidden>
+        <table class="keytable touch-only">
+          <tr><td>按住右下角的「偷吃」按钮</td><td>吃，松手就藏起来</td></tr>
+          <tr><td>点底部的零食格子</td><td>换零食，也能看到名字</td></tr>
+          <tr><td>手指在画面上拖动</td><td>左右看看</td></tr>
+          <tr><td>右上角 ⏸</td><td>暂停、看规则</td></tr>
+        </table>
+        <table class="keytable pc-only">
+          <tr><td><kbd>空格</kbd> 或右下角按钮</td><td>按住吃，松开藏起来</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd> / <kbd>1</kbd>–<kbd>8</kbd> / 鼠标滚轮</td><td>换零食</td></tr>
+          <tr><td>点底部的零食格子</td><td>换零食；鼠标移上去能看到名字</td></tr>
+          <tr><td>按住鼠标拖动</td><td>左右看看</td></tr>
+        </table>
+      </div>
+      <button id="rulesBack">返回</button>
+    </div>
+    <div class="card" id="pauseCard" hidden>
+      <h1>暂停</h1>
+      <button id="resumeBtn">继续上课</button>
+      <button class="ghost" id="pauseRulesBtn">📖 规则和操作</button>
+      <button class="ghost" id="tipsBtn">新手提示：开</button>
+      <button class="ghost" id="restartBtn">重新开始</button>
+    </div>
+    <div class="card" id="endCard" hidden>
+      <h1 id="endTitle"></h1>
+      <p class="sub" id="endSub"></p>
+      <div class="stats" id="endStats"></div>
+      <button id="againBtn">再来一节</button>
+    </div>
+  </div>
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
